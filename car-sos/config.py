@@ -10,4 +10,4 @@ class Config:
     TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID', '')
     TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN', '')
     TWILIO_PHONE_NUMBER = os.environ.get('TWILIO_PHONE_NUMBER', '')
-    SITE_URL = os.environ.get('SITE_URL', 'http://localhost:5000')
+    SITE_URL = os.environ.get('SITE_URL', 'https://fantastic-halibut-q7xjj4jg7wxwh4qpg-5000.app.github.dev')
