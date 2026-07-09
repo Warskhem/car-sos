@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Car SOS - Emergency QR Sticker System{% endblock %}
+{% block content %}
+<div class="hero">
+    <h1>Car SOS Emergency System</h1>
+    <p class="hero-subtitle">QR code stickers for emergency response in accidents and breakdowns</p>
+
+    <div class="hero-cards">
+        <div class="card">
+            <div class="card-icon">🔐</div>
+            <h3>1. Register Your Car</h3>
+            <p>Scan the QR sticker in your car, register your vehicle details and add up to 3 emergency contacts.</p>
+        </div>
+        <div class="card">
+            <div class="card-icon">📱</div>
+            <h3>2. Sticker Ready</h3>
+            <p>The QR code is now linked to your car. In an emergency, anyone can scan it to trigger an SOS.</p>
+        </div>
+        <div class="card">
+            <div class="card-icon">🚨</div>
+            <h3>3. SOS Triggered</h3>
+            <p>Rescuer scans QR &rarr; GPS captured &rarr; Automated calls with beep sent to all emergency contacts instantly.</p>
+        </div>
+    </div>
+
+    <div class="cta-section">
+        {% if current_user.is_authenticated %}
+            <a href="{{ url_for('dashboard') }}" class="btn btn-primary btn-lg">Go to Dashboard</a>
+        {% else %}
+            <a href="{{ url_for('login') }}" class="btn btn-primary btn-lg">Login</a>
+            <a href="{{ url_for('register') }}" class="btn btn-secondary btn-lg">Register</a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="info-section">
+    <h2>How It Works</h2>
+    <div class="steps">
+        <div class="step">
+            <span class="step-num">1</span>
+            <p>Each car gets a unique QR code sticker placed on the windshield or dashboard.</p>
+        </div>
+        <div class="step">
+            <span class="step-num">2</span>
+            <p>The owner scans the QR to register vehicle details and emergency contacts.</p>
+        </div>
+        <div class="step">
+            <span class="step-num">3</span>
+            <p>In an accident, a rescuer scans the QR with their phone — no app required.</p>
+        </div>
+        <div class="step">
+            <span class="step-num">4</span>
+            <p>SOS alert with GPS location and beep is sent instantly to all emergency contacts.</p>
+        </div>
+    </div>
+</div>
+
+<div class="info-section" style="border-top: none; padding-top: 0;">
+    <h2>Privacy First</h2>
+    <div class="hero-cards" style="max-width: 600px; margin: 0 auto;">
+        <div class="card" style="text-align: center; padding: 20px;">
+            <div class="card-icon">🔒</div>
+            <h3>Your data stays private</h3>
+            <p style="font-size: 0.9em; color: var(--gray-600);">Emergency contacts are never revealed to the person scanning the QR code. Only vehicle identification information is shown.</p>
+        </div>
+    </div>
+</div>
+{% endblock %}

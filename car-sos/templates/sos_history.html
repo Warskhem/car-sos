@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}SOS History - Car SOS{% endblock %}
+{% block content %}
+<div class="dashboard-header">
+    <h2>SOS Alert History</h2>
+    <p>All SOS events triggered for your vehicles</p>
+</div>
+
+{% if logs %}
+    <div class="table-responsive">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Date/Time</th>
+                    <th>Vehicle</th>
+                    <th>Location</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in logs %}
+                <tr>
+                    <td>{{ log.contacted_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                    <td>{{ log.vehicle_rel.make }} {{ log.vehicle_rel.model }}<br><small>{{ log.vehicle_rel.plate }}</small></td>
+                    <td>
+                        {% if log.rescuer_lat and log.rescuer_lng %}
+                            <a href="https://maps.google.com/?q={{ log.rescuer_lat }},{{ log.rescuer_lng }}" target="_blank">
+                                {{ "%.4f"|format(log.rescuer_lat) }}, {{ "%.4f"|format(log.rescuer_lng) }}
+                            </a>
+                        {% else %}
+                            <em>Not captured</em>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if log.call_status == 'completed' %}
+                            <span class="badge badge-success">Completed</span>
+                        {% elif log.call_status == 'failed' %}
+                            <span class="badge badge-danger">Failed</span>
+                        {% elif log.call_status == 'twilio_not_configured' %}
+                            <span class="badge badge-warning">Not Configured</span>
+                        {% else %}
+                            <span class="badge badge-secondary">{{ log.call_status }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% else %}
+    <div class="card" style="text-align:center; padding:40px;">
+        <p style="font-size:1.2em;">No SOS alerts triggered yet.</p>
+        <p class="text-muted">Your QR code stickers are ready and waiting.</p>
+    </div>
+{% endif %}
+{% endblock %}

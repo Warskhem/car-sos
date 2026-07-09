@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Car SOS{% endblock %}
+{% block extra_head %}
+<style>
+    .tab { display: none; }
+    .tab.active { display: block; }
+    .tab-nav { display: flex; gap: 0; margin-bottom: 20px; border-radius: 8px; overflow: hidden; }
+    .tab-nav button { flex: 1; padding: 12px; border: none; cursor: pointer; font-size: 16px; background: #e0e0e0; transition: 0.3s; }
+    .tab-nav button.active { background: #dc3545; color: white; font-weight: 600; }
+    .tab-nav button:hover:not(.active) { background: #ccc; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="dashboard-header">
+    <h2>Dashboard</h2>
+    <p>Welcome, {{ current_user.name }}!</p>
+</div>
+
+<div class="tab-nav">
+    <button class="active" onclick="switchTab('vehicles')">Vehicles</button>
+    <button onclick="switchTab('contacts')">Emergency Contacts</button>
+    <button onclick="switchTab('qr')">QR Codes</button>
+</div>
+
+<div id="tab-vehicles" class="tab active">
+    <h3>Your Vehicles</h3>
+    {% if vehicles %}
+        {% for vehicle in vehicles %}
+            <div class="card vehicle-card">
+                <h4>{{ vehicle.make }} {{ vehicle.model }} ({{ vehicle.year }})</h4>
+                <p>Plate: <strong>{{ vehicle.plate }}</strong> | Color: {{ vehicle.color or 'N/A' }}</p>
+                <p>QR Code: <code>{{ vehicle.qr_code.code }}</code></p>
+                <button class="btn btn-small btn-secondary" onclick="toggleEditVehicle({{ vehicle.id }})">Edit</button>
+
+                <form method="POST" action="{{ url_for('edit_vehicle', vehicle_id=vehicle.id) }}" id="edit-vehicle-{{ vehicle.id }}" class="edit-form" style="display:none; margin-top:10px;">
+                    <div class="form-row">
+                        <input type="text" name="make" value="{{ vehicle.make }}" placeholder="Make" class="form-input" required>
+                        <input type="text" name="model" value="{{ vehicle.model }}" placeholder="Model" class="form-input" required>
+                    </div>
+                    <div class="form-row">
+                        <input type="number" name="year" value="{{ vehicle.year }}" placeholder="Year" class="form-input" required>
+                        <input type="text" name="plate" value="{{ vehicle.plate }}" placeholder="Plate" class="form-input" required>
+                    </div>
+                    <input type="text" name="color" value="{{ vehicle.color }}" placeholder="Color" class="form-input" style="margin-top:5px;">
+                    <button type="submit" class="btn btn-primary btn-small" style="margin-top:5px;">Save</button>
+                </form>
+            </div>
+        {% endfor %}
+    {% else %}
+        <p>No vehicles registered yet. <a href="{{ url_for('generate_qr') }}">Generate a QR code</a> or scan your sticker.</p>
+    {% endif %}
+</div>
+
+<div id="tab-contacts" class="tab">
+    <h3>Emergency Contacts</h3>
+    <p class="text-muted">These contacts will be called when SOS is triggered. Priority 1 is called first.</p>
+
+    {% for i in range(1, 4) %}
+        {% set contact = contacts|selectattr('priority', 'equalto', i)|first %}
+        <div class="card contact-card">
+            <h4>Contact {{ i }} {% if i == 1 %}(Primary){% endif %}</h4>
+            <form method="POST" action="{{ url_for('add_contact') }}" class="form-inline">
+                <input type="hidden" name="priority" value="{{ i }}">
+                <input type="text" name="name" placeholder="Full Name" class="form-input" value="{{ contact.name if contact else '' }}" required>
+                <input type="tel" name="phone" placeholder="Phone (e.g. +1234567890)" class="form-input" value="{{ contact.phone if contact else '' }}" required>
+                <button type="submit" class="btn btn-primary btn-small">Save</button>
+            </form>
+            {% if contact %}
+                <form method="POST" action="{{ url_for('delete_contact', contact_id=contact.id) }}" style="margin-top:5px;">
+                    <button type="submit" class="btn btn-danger btn-small">Remove</button>
+                </form>
+            {% endif %}
+        </div>
+    {% endfor %}
+</div>
+
+<div id="tab-qr" class="tab">
+    <h3>Your QR Codes</h3>
+    {% if qr_codes %}
+        {% for qr in qr_codes %}
+            <div class="card qr-card">
+                <p>Code: <code>{{ qr.code }}</code></p>
+                <p>Claimed: {% if qr.is_claimed %}Yes{% else %}No{% endif %}</p>
+                <p>Created: {{ qr.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
+                <div class="btn-group">
+                    <a href="{{ url_for('sticker_view', code=qr.code) }}" class="btn btn-small btn-primary" target="_blank">View Sticker</a>
+                    <a href="{{ url_for('sticker_download', code=qr.code) }}" class="btn btn-small btn-secondary">Download PNG</a>
+                </div>
+            </div>
+        {% endfor %}
+    {% else %}
+        <p>No QR codes generated yet.</p>
+        <a href="{{ url_for('generate_qr') }}" class="btn btn-primary">Generate QR Codes</a>
+    {% endif %}
+</div>
+
+<script>
+function switchTab(name) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-nav button').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+    document.querySelector(`.tab-nav button[onclick="switchTab('${name}')"]`).classList.add('active');
+}
+function toggleEditVehicle(id) {
+    const form = document.getElementById('edit-vehicle-' + id);
+    form.style.display = form.style.display === 'none' ? 'block' : 'none';
+}
+</script>
+{% endblock %}

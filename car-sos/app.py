@@ -1,0 +1,438 @@
+import os
+from datetime import datetime
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file, abort
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user
+from io import BytesIO
+
+from config import Config
+from models import db, User, QRCode, Vehicle, EmergencyContact, SOSLog
+from utils.qr_generator import generate_unique_code, generate_qr_image, qr_to_base64
+from utils.beep_generator import generate_beep_wav, generate_sos_pattern
+from services.twilio_service import TwilioService
+
+app = Flask(__name__)
+app.config.from_object(Config)
+app.config['TEMPLATES_AUTO_RELOAD'] = True
+
+db.init_app(app)
+
+login_manager = LoginManager(app)
+login_manager.login_view = 'login'
+
+with app.app_context():
+    db.create_all()
+    beep_data = generate_beep_wav(duration=0.5, frequency=880, volume=0.8)
+    beep_path = os.path.join(app.static_folder, 'beep.wav')
+    os.makedirs(app.static_folder, exist_ok=True)
+    if not os.path.exists(beep_path):
+        with open(beep_path, 'wb') as f:
+            f.write(beep_data)
+
+twilio_service = TwilioService(
+    account_sid=app.config['TWILIO_ACCOUNT_SID'],
+    auth_token=app.config['TWILIO_AUTH_TOKEN'],
+    from_number=app.config['TWILIO_PHONE_NUMBER']
+)
+
+@login_manager.user_loader
+def load_user(user_id):
+    return db.session.get(User, int(user_id))
+
+@app.context_processor
+def inject_site_url():
+    return {'site_url': app.config['SITE_URL']}
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        email = request.form.get('email')
+        password = request.form.get('password')
+        name = request.form.get('name')
+        phone = request.form.get('phone')
+
+        if User.query.filter_by(email=email).first():
+            flash('Email already registered', 'danger')
+            return render_template('register.html')
+
+        user = User(email=email, name=name, phone=phone)
+        user.set_password(password)
+        db.session.add(user)
+        db.session.commit()
+        login_user(user)
+        flash('Registration successful!', 'success')
+        return redirect(url_for('dashboard'))
+
+    return render_template('register.html')
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        email = request.form.get('email')
+        password = request.form.get('password')
+        user = User.query.filter_by(email=email).first()
+
+        if user and user.check_password(password):
+            login_user(user)
+            next_page = request.args.get('next')
+            return redirect(next_page or url_for('dashboard'))
+        flash('Invalid email or password', 'danger')
+
+    return render_template('login.html')
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('index'))
+
+@app.route('/dashboard')
+@login_required
+def dashboard():
+    qr_codes = QRCode.query.filter_by(user_id=current_user.id).all()
+    vehicles = Vehicle.query.filter_by(user_id=current_user.id).all()
+    contacts = EmergencyContact.query.filter_by(user_id=current_user.id).order_by(EmergencyContact.priority).all()
+    return render_template('dashboard.html', qr_codes=qr_codes, vehicles=vehicles, contacts=contacts)
+
+@app.route('/dashboard/vehicle/add', methods=['POST'])
+@login_required
+def add_vehicle():
+    qr_code_id = request.form.get('qr_code_id')
+    make = request.form.get('make')
+    model = request.form.get('model')
+    year = request.form.get('year')
+    plate = request.form.get('plate')
+    color = request.form.get('color', '')
+
+    existing = Vehicle.query.filter_by(qr_code_id=qr_code_id).first()
+    if existing:
+        flash('This QR code is already linked to a vehicle', 'danger')
+        return redirect(url_for('dashboard'))
+
+    qr = db.session.get(QRCode, qr_code_id)
+    if qr and not qr.is_claimed:
+        qr.is_claimed = True
+        qr.claimed_at = datetime.utcnow()
+        qr.user_id = current_user.id
+
+    vehicle = Vehicle(
+        user_id=current_user.id,
+        qr_code_id=qr_code_id,
+        make=make,
+        model=model,
+        year=int(year),
+        plate=plate,
+        color=color
+    )
+    db.session.add(vehicle)
+    db.session.commit()
+    flash('Vehicle added!', 'success')
+    return redirect(url_for('dashboard'))
+
+@app.route('/dashboard/vehicle/<int:vehicle_id>/edit', methods=['POST'])
+@login_required
+def edit_vehicle(vehicle_id):
+    vehicle = db.session.get(Vehicle, vehicle_id)
+    if not vehicle or vehicle.user_id != current_user.id:
+        abort(403)
+
+    vehicle.make = request.form.get('make')
+    vehicle.model = request.form.get('model')
+    vehicle.year = int(request.form.get('year'))
+    vehicle.plate = request.form.get('plate')
+    vehicle.color = request.form.get('color', '')
+    db.session.commit()
+    flash('Vehicle updated!', 'success')
+    return redirect(url_for('dashboard'))
+
+@app.route('/dashboard/contact/add', methods=['POST'])
+@login_required
+def add_contact():
+    name = request.form.get('name')
+    phone = request.form.get('phone')
+    priority = int(request.form.get('priority'))
+
+    existing = EmergencyContact.query.filter_by(user_id=current_user.id, priority=priority).first()
+    if existing:
+        existing.name = name
+        existing.phone = phone
+    else:
+        contact = EmergencyContact(
+            user_id=current_user.id,
+            name=name,
+            phone=phone,
+            priority=priority
+        )
+        db.session.add(contact)
+    db.session.commit()
+    flash('Emergency contact saved!', 'success')
+    return redirect(url_for('dashboard'))
+
+@app.route('/dashboard/contact/<int:contact_id>/delete', methods=['POST'])
+@login_required
+def delete_contact(contact_id):
+    contact = db.session.get(EmergencyContact, contact_id)
+    if not contact or contact.user_id != current_user.id:
+        abort(403)
+    db.session.delete(contact)
+    db.session.commit()
+    flash('Contact removed', 'success')
+    return redirect(url_for('dashboard'))
+
+@app.route('/dashboard/history')
+@login_required
+def sos_history():
+    vehicle_ids = [v.id for v in Vehicle.query.filter_by(user_id=current_user.id).all()]
+    logs = SOSLog.query.filter(SOSLog.vehicle_id.in_(vehicle_ids)).order_by(SOSLog.contacted_at.desc()).all() if vehicle_ids else []
+    return render_template('sos_history.html', logs=logs)
+
+@app.route('/dashboard/qr/generate', methods=['GET', 'POST'])
+@login_required
+def generate_qr():
+    if request.method == 'POST':
+        count = int(request.form.get('count', 1))
+        new_codes = []
+        for _ in range(count):
+            code = generate_unique_code()
+            qr = QRCode(code=code)
+            db.session.add(qr)
+            new_codes.append(code)
+        db.session.commit()
+        flash(f'{count} QR codes generated!', 'success')
+        return redirect(url_for('generate_qr'))
+
+    qr_codes = QRCode.query.order_by(QRCode.created_at.desc()).limit(50).all()
+    return render_template('admin_qr.html', qr_codes=qr_codes)
+
+@app.route('/sos/<code>', methods=['GET'])
+def sos_landing(code):
+    qr = QRCode.query.filter_by(code=code.upper()).first()
+    if not qr:
+        abort(404)
+
+    if not qr.is_claimed:
+        return redirect(url_for('sos_register', code=code.upper()))
+
+    vehicle = Vehicle.query.filter_by(qr_code_id=qr.id).first()
+    if not vehicle:
+        abort(404)
+
+    return render_template('sos_page.html', code=code.upper(), vehicle=vehicle)
+
+@app.route('/sos/<code>/register', methods=['GET', 'POST'])
+def sos_register(code):
+    qr = QRCode.query.filter_by(code=code.upper()).first()
+    if not qr:
+        abort(404)
+
+    if qr.is_claimed:
+        return redirect(url_for('sos_landing', code=code.upper()))
+
+    if request.method == 'POST':
+        email = request.form.get('email')
+        password = request.form.get('password')
+        name = request.form.get('name')
+        phone = request.form.get('phone')
+        make = request.form.get('make')
+        model = request.form.get('model')
+        year = request.form.get('year')
+        plate = request.form.get('plate')
+        color = request.form.get('color', '')
+
+        contact1_name = request.form.get('contact1_name')
+        contact1_phone = request.form.get('contact1_phone')
+        contact2_name = request.form.get('contact2_name')
+        contact2_phone = request.form.get('contact2_phone')
+        contact3_name = request.form.get('contact3_name')
+        contact3_phone = request.form.get('contact3_phone')
+
+        user = User.query.filter_by(email=email).first()
+        if not user:
+            user = User(email=email, name=name, phone=phone)
+            user.set_password(password)
+            db.session.add(user)
+            db.session.flush()
+        else:
+            if not user.check_password(password):
+                flash('Invalid password for this email', 'danger')
+                return render_template('sos_register.html', code=code.upper())
+
+        qr.is_claimed = True
+        qr.claimed_at = datetime.utcnow()
+        qr.user_id = user.id
+
+        vehicle = Vehicle(
+            user_id=user.id,
+            qr_code_id=qr.id,
+            make=make,
+            model=model,
+            year=int(year),
+            plate=plate,
+            color=color
+        )
+        db.session.add(vehicle)
+        db.session.flush()
+
+        contacts_data = [
+            (1, contact1_name, contact1_phone),
+            (2, contact2_name, contact2_phone),
+            (3, contact3_name, contact3_phone),
+        ]
+        for priority, cname, cphone in contacts_data:
+            if cname and cphone:
+                existing = EmergencyContact.query.filter_by(user_id=user.id, priority=priority).first()
+                if existing:
+                    existing.name = cname
+                    existing.phone = cphone
+                else:
+                    contact = EmergencyContact(user_id=user.id, name=cname, phone=cphone, priority=priority)
+                    db.session.add(contact)
+
+        db.session.commit()
+
+        login_user(user)
+        flash('Vehicle registered successfully! QR code is now active for SOS.', 'success')
+        return redirect(url_for('dashboard'))
+
+    return render_template('sos_register.html', code=code.upper())
+
+@app.route('/sos/<code>/trigger', methods=['POST'])
+def sos_trigger(code):
+    qr = QRCode.query.filter_by(code=code.upper()).first()
+    if not qr or not qr.is_claimed:
+        return jsonify({'status': 'error', 'message': 'Invalid or unclaimed QR code'}), 404
+
+    vehicle = Vehicle.query.filter_by(qr_code_id=qr.id).first()
+    if not vehicle:
+        return jsonify({'status': 'error', 'message': 'No vehicle found'}), 404
+
+    data = request.get_json(silent=True) or {}
+    lat = data.get('lat')
+    lng = data.get('lng')
+
+    user = db.session.get(User, qr.user_id)
+    contacts = EmergencyContact.query.filter_by(user_id=qr.user_id).order_by(EmergencyContact.priority).all()
+
+    log = SOSLog(
+        qr_code_id=qr.id,
+        vehicle_id=vehicle.id,
+        rescuer_lat=lat,
+        rescuer_lng=lng,
+    )
+    db.session.add(log)
+    db.session.flush()
+
+    location_url = f"https://maps.google.com/?q={lat},{lng}" if lat and lng else "Location not available"
+    vehicle_info = {
+        'make': vehicle.make,
+        'model': vehicle.model,
+        'year': vehicle.year,
+        'plate': vehicle.plate,
+        'color': vehicle.color or 'unknown'
+    }
+
+    calls_initiated = 0
+    if twilio_service.is_configured():
+        for contact in contacts:
+            result = twilio_service.make_sos_call(
+                to_number=contact.phone,
+                vehicle_info=vehicle_info,
+                location_url=location_url,
+                site_url=app.config['SITE_URL']
+            )
+            if result.get('status') == 'initiated':
+                calls_initiated += 1
+        log.call_status = 'completed' if calls_initiated > 0 else 'failed'
+    else:
+        log.call_status = 'twilio_not_configured'
+
+    db.session.commit()
+
+    return jsonify({
+        'status': 'success',
+        'message': 'SOS alert sent to all emergency contacts',
+        'vehicle': f"{vehicle.make} {vehicle.model} ({vehicle.plate})",
+        'location': location_url,
+        'calls_sent': calls_initiated if twilio_service.is_configured() else 0,
+        'log_id': log.id
+    })
+
+@app.route('/twilio/handle-input', methods=['POST'])
+def twilio_handle_input():
+    from twilio.twiml.voice_response import VoiceResponse
+    response = VoiceResponse()
+    response.say("Repeating the SOS alert.", voice='alice')
+    response.play(f"{app.config['SITE_URL']}/static/beep.wav")
+    response.pause(length=1)
+    response.play(f"{app.config['SITE_URL']}/static/beep.wav")
+    response.hangup()
+    return str(response), 200, {'Content-Type': 'text/xml'}
+
+@app.route('/sticker/<code>')
+def sticker_view(code):
+    qr = QRCode.query.filter_by(code=code.upper()).first()
+    if not qr:
+        abort(404)
+
+    qr_url = f"{app.config['SITE_URL']}/sos/{code.upper()}"
+    qr_b64 = qr_to_base64(qr_url, box_size=12, border=2)
+    vehicle = Vehicle.query.filter_by(qr_code_id=qr.id).first()
+    return render_template('sticker.html', code=code.upper(), qr_b64=qr_b64, vehicle=vehicle, claimed=qr.is_claimed)
+
+@app.route('/sticker/<code>/download')
+def sticker_download(code):
+    qr = QRCode.query.filter_by(code=code.upper()).first()
+    if not qr:
+        abort(404)
+
+    qr_url = f"{app.config['SITE_URL']}/sos/{code.upper()}"
+    img = generate_qr_image(qr_url, box_size=20, border=2)
+
+    vehicle = Vehicle.query.filter_by(qr_code_id=qr.id).first()
+
+    from PIL import Image, ImageDraw, ImageFont
+    sticker_w = 600
+    sticker_h = 700
+    sticker = Image.new('RGB', (sticker_w, sticker_h), 'white')
+    draw = ImageDraw.Draw(sticker)
+
+    qr_size = 400
+    qr_resized = img.resize((qr_size, qr_size), Image.LANCZOS)
+    sticker.paste(qr_resized, ((sticker_w - qr_size) // 2, 40))
+
+    try:
+        font_large = ImageFont.truetype("arial.ttf", 36)
+        font_small = ImageFont.truetype("arial.ttf", 20)
+        font_tiny = ImageFont.truetype("arial.ttf", 16)
+    except (IOError, OSError):
+        font_large = ImageFont.load_default()
+        font_small = font_large
+        font_tiny = font_large
+
+    draw.text((sticker_w // 2, 470), "SOS EMERGENCY", fill='red', anchor='mt', font=font_large)
+    url_text = f"{app.config['SITE_URL'].replace('http://', '').replace('https://', '')}/{code.upper()}"
+    draw.text((sticker_w // 2, 520), url_text, fill='black', anchor='mt', font=font_small)
+    draw.text((sticker_w // 2, 555), "Scan to alert emergency contacts", fill='#555', anchor='mt', font=font_tiny)
+    draw.text((sticker_w // 2, 580), "in case of accident or breakdown", fill='#555', anchor='mt', font=font_tiny)
+
+    if vehicle:
+        draw.text((sticker_w // 2, 630), f"{vehicle.make} {vehicle.model} - {vehicle.plate}", fill='#333', anchor='mt', font=font_tiny)
+
+    img_buffer = BytesIO()
+    sticker.save(img_buffer, format='PNG')
+    img_buffer.seek(0)
+    return send_file(img_buffer, mimetype='image/png', as_attachment=True, download_name=f'sos-sticker-{code.upper()}.png')
+
+@app.route('/static/beep.wav')
+def serve_beep():
+    beep_path = os.path.join(app.static_folder, 'beep.wav')
+    if os.path.exists(beep_path):
+        return send_file(beep_path, mimetype='audio/wav')
+    beep_data = generate_beep_wav(0.5, 880, 0.8)
+    return send_file(BytesIO(beep_data), mimetype='audio/wav')
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)

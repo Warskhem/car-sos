@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Sticker - Car SOS{% endblock %}
+{% block extra_head %}
+<style>
+    .sticker-container { display: flex; justify-content: center; padding: 20px; }
+    .sticker { width: 420px; background: white; border: 3px solid #dc3545; border-radius: 16px; padding: 24px; text-align: center; box-shadow: 0 8px 30px rgba(0,0,0,0.15); }
+    .sticker .qr-section { background: white; padding: 16px; border-radius: 12px; margin-bottom: 12px; }
+    .sticker .qr-section img { width: 280px; height: 280px; image-rendering: pixelated; }
+    .sticker .sos-title { color: #dc3545; font-size: 28px; font-weight: bold; letter-spacing: 2px; margin: 8px 0; }
+    .sticker .url-text { font-size: 18px; font-weight: 600; color: #333; letter-spacing: 1px; margin: 4px 0; font-family: monospace; }
+    .sticker .sub-text { font-size: 13px; color: #666; margin: 4px 0; }
+    .sticker .vehicle-line { font-size: 14px; color: #444; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #ddd; }
+    .sticker .warning-icon { font-size: 32px; }
+    .sticker-actions { text-align: center; margin: 20px 0; }
+    @media print {
+        body { background: white; }
+        .navbar, .footer, .sticker-actions { display: none !important; }
+        .sticker { box-shadow: none; border: 2px solid #333; }
+        .main-content { padding: 0; }
+    }
+</style>
+{% endblock %}
+{% block content %}
+<div class="sticker-actions">
+    <a href="{{ url_for('sticker_download', code=code) }}" class="btn btn-primary">Download PNG</a>
+    <button onclick="window.print()" class="btn btn-secondary">Print Sticker</button>
+</div>
+
+<div class="sticker-container">
+    <div class="sticker">
+        <div class="warning-icon">⚠️</div>
+        <div class="sos-title">SOS EMERGENCY</div>
+        <div class="qr-section">
+            <img src="data:image/png;base64,{{ qr_b64 }}" alt="QR Code for {{ code }}">
+        </div>
+        <div class="url-text">{{ site_url.replace('http://', '').replace('https://', '') }}/{{ code }}</div>
+        <div class="sub-text">Scan to alert emergency contacts</div>
+        <div class="sub-text">in case of accident or breakdown</div>
+        {% if vehicle %}
+            <div class="vehicle-line">{{ vehicle.make }} {{ vehicle.model }} &middot; {{ vehicle.plate }}</div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="sticker-actions" style="margin-top:10px;">
+    <p class="text-muted">Print on sticker paper, cut out, and place on the car windshield or dashboard.</p>
+</div>
+{% endblock %}
