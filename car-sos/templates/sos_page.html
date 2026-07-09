@@ -38,6 +38,7 @@
     .status-panel .status-detail { font-size: 0.9em; margin-top: 6px; opacity: 0.8; }
     .beep-flash { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(220,53,69,0.15); z-index: 999; pointer-events: none; animation: beepFlash 0.15s ease 6; }
     @keyframes beepFlash { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
+    @keyframes beepFlashLong { 0% { opacity: 0; } 5% { opacity: 1; } 10% { opacity: 0; } 15% { opacity: 1; } 20% { opacity: 0; } 25% { opacity: 1; } 30% { opacity: 0; } 35% { opacity: 1; } 40% { opacity: 0; } 45% { opacity: 1; } 50% { opacity: 0; } 55% { opacity: 1; } 60% { opacity: 0; } 65% { opacity: 1; } 70% { opacity: 0; } 75% { opacity: 1; } 80% { opacity: 0; } 85% { opacity: 1; } 90% { opacity: 0; } 95% { opacity: 1; } 100% { opacity: 0; } }
     .privacy-note { text-align: center; font-size: 0.8em; color: #999; margin-top: 16px; padding: 12px; border-top: 1px solid #eee; }
     .privacy-note strong { color: #dc3545; }
     @media (min-width: 600px) {
@@ -138,9 +139,11 @@ function triggerSOS() {
             msg.innerHTML = `SOS sent successfully`;
             detail.innerHTML = `Vehicle: ${data.vehicle}<br>${data.calls_sent} emergency contacts notified`;
             btn.innerHTML = '✅ SOS SENT';
-            document.getElementById('beepFlash').style.display = 'block';
+            const flash = document.getElementById('beepFlash');
+            flash.style.display = 'block';
+            flash.style.animation = 'beepFlashLong 10s';
             playBeepSound();
-            setTimeout(() => { document.getElementById('beepFlash').style.display = 'none'; }, 1000);
+            setTimeout(() => { flash.style.display = 'none'; }, 10000);
         } else {
             panel.className = 'status-panel error show';
             icon.textContent = '❌';
@@ -165,18 +168,24 @@ function triggerSOS() {
 function playBeepSound() {
     try {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        for (let i = 0; i < 3; i++) {
+        const totalDuration = 10;
+        const beepDuration = 0.25;
+        const gapDuration = 0.2;
+        const interval = beepDuration + gapDuration;
+        const count = Math.floor(totalDuration / interval);
+
+        for (let i = 0; i < count; i++) {
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
-            osc.type = 'sine';
+            osc.type = 'square';
             osc.frequency.value = 880;
-            gain.gain.value = 0.5;
-            gain.gain.setValueAtTime(0.5, ctx.currentTime + i * 0.3);
-            gain.gain.setValueAtTime(0, ctx.currentTime + i * 0.3 + 0.15);
+            const startTime = ctx.currentTime + i * interval;
+            gain.gain.setValueAtTime(0.5, startTime);
+            gain.gain.setValueAtTime(0, startTime + beepDuration);
             osc.connect(gain);
             gain.connect(ctx.destination);
-            osc.start(ctx.currentTime + i * 0.3);
-            osc.stop(ctx.currentTime + i * 0.3 + 0.15);
+            osc.start(startTime);
+            osc.stop(startTime + beepDuration);
         }
     } catch(e) { /* beep unavailable */ }
 }
