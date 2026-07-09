@@ -65,9 +65,9 @@
         </div>
 
         <div class="sos-btn-wrap">
-            <button id="sosBtn" class="sos-trigger" onclick="triggerAllContacts()" style="opacity:0.6;transform:scale(0.95);">
+            <button id="sosBtn" class="sos-trigger pulse" onclick="triggerAllContacts()">
                 🚨 SEND SOS TO ALL CONTACTS
-                <span class="sub">Primary contact is being alerted automatically</span>
+                <span class="sub">Primary contact is alerted automatically &middot; Use this for all 3</span>
             </button>
         </div>
 
@@ -82,6 +82,8 @@
         </div>
     </div>
 </div>
+
+<div id="simulatedSms" style="display:none;"></div>
 
 <div id="beepFlash" class="beep-flash"></div>
 
@@ -140,13 +142,18 @@ function autoTriggerPrimary() {
         if (data.status === 'success') {
             panel.className = 'status-panel success show';
             icon.textContent = '✅';
-            msg.textContent = `${data.primary_name} has been alerted`;
-            detail.innerHTML = `<strong>Call:</strong> ${data.call === 'initiated' ? '📞 Initiated' : '⚠️ Skipped'}<br><strong>SMS with GPS:</strong> ${data.sms === 'sent' ? '📨 Sent' : '⚠️ Skipped'}<br><strong>Vehicle:</strong> ${data.vehicle}`;
+            const callSkipped = data.call === 'skipped' || data.call === 'failed';
+            msg.textContent = callSkipped ? `${data.primary_name} alerted (simulated)` : `${data.primary_name} has been alerted`;
+            detail.innerHTML = `<strong>Call:</strong> ${data.call === 'initiated' ? '📞 Connected' : '📞 Simulated (demo)'}<br><strong>SMS with GPS:</strong> ${data.sms === 'sent' ? '📨 Sent' : '📨 Simulated (demo)'}<br><strong>Vehicle:</strong> ${data.vehicle}`;
             const flash = document.getElementById('beepFlash');
             flash.style.display = 'block';
             flash.style.animation = 'beepFlashLong 10s';
             playBeepSound();
             setTimeout(() => { flash.style.display = 'none'; }, 10000);
+            if (callSkipped) {
+                simulateCall(data);
+                simulateSms(data);
+            }
         } else {
             panel.className = 'status-panel error show';
             icon.textContent = '⚠️';
@@ -187,8 +194,9 @@ function triggerAllContacts() {
         if (data.status === 'success') {
             panel.className = 'status-panel success show';
             icon.textContent = '✅';
-            msg.innerHTML = `SOS sent successfully`;
-            detail.innerHTML = `Vehicle: ${data.vehicle}<br>${data.calls_sent} emergency contacts notified`;
+            const noCalls = data.calls_sent === 0;
+            msg.innerHTML = noCalls ? `SOS sent (simulated)` : `SOS sent successfully`;
+            detail.innerHTML = `<strong>Vehicle:</strong> ${data.vehicle}<br>${data.calls_sent} contacts notified${noCalls ? ' (demo mode)' : ''}`;
             btn.innerHTML = '✅ SOS SENT';
             const flash = document.getElementById('beepFlash');
             flash.style.display = 'block';
@@ -239,6 +247,34 @@ function playBeepSound() {
             osc.stop(startTime + beepDuration);
         }
     } catch(e) { /* beep unavailable */ }
+}
+
+function simulateCall(data) {
+    try {
+        const msg = `EMERGENCY SOS ALERT. Vehicle ${data.vehicle}. Location: https://maps.google.com/?q=${capturedLat},${capturedLng}. An accident or breakdown has been reported. Please respond immediately.`;
+        const utterance = new SpeechSynthesisUtterance(msg);
+        utterance.rate = 0.9;
+        utterance.pitch = 1.1;
+        utterance.lang = 'en-US';
+        window.speechSynthesis.speak(utterance);
+    } catch(e) { /* speech unavailable */ }
+}
+
+function simulateSms(data) {
+    const sms = document.getElementById('simulatedSms');
+    if (!sms) return;
+    const loc = capturedLat && capturedLng ? `maps.google.com/?q=${capturedLat},${capturedLng}` : 'Location not available';
+    sms.innerHTML = `
+        <div style="background:#e8f5e9;border:2px solid #4caf50;border-radius:12px;padding:14px;margin-top:12px;font-size:0.85rem;">
+            <div style="font-weight:700;color:#2e7d32;margin-bottom:6px;">📨 SIMULATED SMS to ${data.primary_name || 'Primary Contact'}</div>
+            <div style="color:#333;line-height:1.5;">
+                🚨 SOS ALERT: ${data.vehicle} needs emergency assistance!<br>
+                📍 Location: ${loc}<br>
+                🔗 <a href="https://${loc}" target="_blank" style="color:#1a73e8;">Open in Maps</a>
+            </div>
+        </div>
+    `;
+    sms.style.display = 'block';
 }
 
 getLocation();
