@@ -5,32 +5,39 @@
 {% endblock %}
 {% block content %}
 <div class="form-container form-container-wide">
-    <div class="sos-register-header" style="text-align:center; margin-bottom:24px;">
-        <h2>🚗 Register Your Vehicle</h2>
-        <p>This QR code (<code>{{ code }}</code>) is unclaimed. Complete the form to link it to your vehicle.</p>
-        <p class="text-muted">Once registered, anyone scanning this QR will be able to send an SOS to your emergency contacts.</p>
+    <div style="text-align:center;margin-bottom:24px;">
+        <div style="font-size:2.5rem;margin-bottom:8px;">🚗</div>
+        <h2>Register Your Vehicle</h2>
+        <p class="subtitle">This QR code (<code style="font-size:0.9rem;letter-spacing:1px;">{{ code }}</code>) is unclaimed. Complete the form to link it to your vehicle.</p>
+        <div class="alert alert-info" style="text-align:left;">
+            <strong>Once registered:</strong> Anyone scanning this QR code will see your vehicle info and can trigger an SOS to your emergency contacts. Your personal details remain hidden.
+        </div>
     </div>
 
     <form method="POST" class="form">
-        <h3>Your Details</h3>
-        <div class="form-group">
-            <label for="name">Full Name *</label>
-            <input type="text" id="name" name="name" required class="form-input" placeholder="John Doe">
+        <h3 style="margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid var(--gray-200);">Your Details</h3>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="name">Full Name *</label>
+                <input type="text" id="name" name="name" required class="form-input" placeholder="John Doe">
+            </div>
+            <div class="form-group">
+                <label for="phone">Phone Number *</label>
+                <input type="tel" id="phone" name="phone" required class="form-input" placeholder="+1234567890">
+            </div>
         </div>
-        <div class="form-group">
-            <label for="email">Email *</label>
-            <input type="email" id="email" name="email" required class="form-input" placeholder="your@email.com">
-        </div>
-        <div class="form-group">
-            <label for="password">Password *</label>
-            <input type="password" id="password" name="password" required class="form-input" placeholder="Create a password (or enter existing if already registered)">
-        </div>
-        <div class="form-group">
-            <label for="phone">Phone Number *</label>
-            <input type="tel" id="phone" name="phone" required class="form-input" placeholder="+1234567890">
+        <div class="form-row">
+            <div class="form-group">
+                <label for="email">Email *</label>
+                <input type="email" id="email" name="email" required class="form-input" placeholder="your@email.com">
+            </div>
+            <div class="form-group">
+                <label for="password">Password *</label>
+                <input type="password" id="password" name="password" required class="form-input" placeholder="Create password">
+            </div>
         </div>
 
-        <h3 style="margin-top:24px;">Vehicle Details</h3>
+        <h3 style="margin:24px 0 16px;padding-bottom:8px;border-bottom:1px solid var(--gray-200);">Vehicle Details</h3>
         <div class="form-row">
             <div class="form-group">
                 <label for="make">Make *</label>
@@ -56,34 +63,34 @@
             <input type="text" id="color" name="color" class="form-input" placeholder="White">
         </div>
 
-        <h3 style="margin-top:24px;">Emergency Contacts</h3>
-        <p class="text-muted">These 3 people will be called in order when SOS is triggered.</p>
+        <h3 style="margin:24px 0 16px;padding-bottom:8px;border-bottom:1px solid var(--gray-200);">Emergency Contacts</h3>
+        <p class="text-muted" style="margin-bottom:16px;">These 3 people will be called in order when SOS is triggered.</p>
 
-        <div class="contact-group">
-            <h4>Contact 1 (Primary)</h4>
+        <div class="card" style="padding:16px;margin-bottom:12px;background:var(--primary-light);border:1px solid #ffcdd2;">
+            <h4 style="margin-bottom:8px;">Contact 1 <span class="badge badge-danger">Primary</span></h4>
             <div class="form-row">
                 <input type="text" name="contact1_name" required class="form-input" placeholder="Full Name">
-                <input type="tel" name="contact1_phone" required class="form-input" placeholder="Phone (e.g. +1234567890)">
+                <input type="tel" name="contact1_phone" required class="form-input" placeholder="+1234567890">
             </div>
         </div>
 
-        <div class="contact-group">
-            <h4>Contact 2</h4>
+        <div class="card" style="padding:16px;margin-bottom:12px;">
+            <h4 style="margin-bottom:8px;">Contact 2</h4>
             <div class="form-row">
                 <input type="text" name="contact2_name" required class="form-input" placeholder="Full Name">
-                <input type="tel" name="contact2_phone" required class="form-input" placeholder="Phone (e.g. +1234567890)">
+                <input type="tel" name="contact2_phone" required class="form-input" placeholder="+1234567890">
             </div>
         </div>
 
-        <div class="contact-group">
-            <h4>Contact 3</h4>
+        <div class="card" style="padding:16px;margin-bottom:12px;">
+            <h4 style="margin-bottom:8px;">Contact 3</h4>
             <div class="form-row">
                 <input type="text" name="contact3_name" required class="form-input" placeholder="Full Name">
-                <input type="tel" name="contact3_phone" required class="form-input" placeholder="Phone (e.g. +1234567890)">
+                <input type="tel" name="contact3_phone" required class="form-input" placeholder="+1234567890">
             </div>
         </div>
 
-        <button type="submit" class="btn btn-primary btn-block btn-lg" style="margin-top:24px;">✅ Register & Activate QR Code</button>
+        <button type="submit" class="btn btn-primary btn-block btn-lg" style="margin-top:24px;">Register &amp; Activate QR Code</button>
     </form>
 </div>
 {% endblock %}

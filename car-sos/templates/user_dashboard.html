@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Car SOS{% endblock %}
+{% block content %}
+<div class="dashboard-header">
+    <h2>My Dashboard</h2>
+    <p>Welcome, {{ current_user.name }}</p>
+</div>
+
+<div class="tab-nav">
+    <button class="active" onclick="switchTab('vehicles')">My Vehicles</button>
+    <button onclick="switchTab('contacts')">Emergency Contacts</button>
+</div>
+
+<div id="tab-vehicles" class="tab active">
+    <h3 style="margin-bottom:16px;">Registered Vehicles</h3>
+    {% if vehicles %}
+        {% for vehicle in vehicles %}
+            <div class="card" style="margin-bottom:12px;">
+                <div class="flex-between">
+                    <div>
+                        <h4 style="font-size:1.1rem;">{{ vehicle.make }} {{ vehicle.model }} ({{ vehicle.year }})</h4>
+                        <p class="text-muted">Plate: <strong>{{ vehicle.plate }}</strong> &middot; Color: {{ vehicle.color or 'N/A' }}</p>
+                        <p class="text-muted">QR: <code style="font-size:0.9rem;letter-spacing:1px;">{{ vehicle.qr_code.code if vehicle.qr_code else 'N/A' }}</code></p>
+                    </div>
+                    <button class="btn btn-sm btn-secondary" onclick="toggleEdit({{ vehicle.id }})">Edit</button>
+                </div>
+                <form method="POST" action="{{ url_for('edit_vehicle', vehicle_id=vehicle.id) }}" id="edit-form-{{ vehicle.id }}" class="edit-form" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--gray-200);">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Make</label>
+                            <input type="text" name="make" value="{{ vehicle.make }}" class="form-input" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Model</label>
+                            <input type="text" name="model" value="{{ vehicle.model }}" class="form-input" required>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Year</label>
+                            <input type="number" name="year" value="{{ vehicle.year }}" class="form-input" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Plate</label>
+                            <input type="text" name="plate" value="{{ vehicle.plate }}" class="form-input" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Color</label>
+                        <input type="text" name="color" value="{{ vehicle.color }}" class="form-input">
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm">Save Changes</button>
+                </form>
+            </div>
+        {% endfor %}
+    {% else %}
+        <div class="empty-state">
+            <div class="empty-icon">🚗</div>
+            <h3>No Vehicles Registered</h3>
+            <p>Scan your SOS QR code sticker and complete the registration form to link your vehicle</p>
+            <div style="margin-top:16px;padding:16px;background:var(--gray-100);border-radius:var(--radius-sm);display:inline-block;">
+                <p class="text-muted" style="font-size:0.85rem;">Need a QR code? Ask your admin to generate one.</p>
+            </div>
+        </div>
+    {% endif %}
+</div>
+
+<div id="tab-contacts" class="tab">
+    <h3 style="margin-bottom:16px;">Emergency Contacts</h3>
+    <p class="text-muted" style="margin-bottom:16px;">These 3 contacts will be called in order when SOS is triggered from your vehicle.</p>
+
+    {% for i in range(1, 4) %}
+        {% set contact = contacts|selectattr('priority', 'equalto', i)|first %}
+        <div class="card" style="margin-bottom:12px;">
+            <h4 style="font-size:1rem;margin-bottom:12px;">
+                Contact {{ i }}
+                {% if i == 1 %}<span class="badge badge-danger" style="margin-left:8px;">Primary</span>{% endif %}
+            </h4>
+            <form method="POST" action="{{ url_for('add_contact') }}" class="form">
+                <input type="hidden" name="priority" value="{{ i }}">
+                <div class="form-row">
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>Full Name</label>
+                        <input type="text" name="name" class="form-input" value="{{ contact.name if contact else '' }}" placeholder="John Doe" required>
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label>Phone</label>
+                        <input type="tel" name="phone" class="form-input" value="{{ contact.phone if contact else '' }}" placeholder="+1234567890" required>
+                    </div>
+                </div>
+                <div class="flex" style="gap:8px;margin-top:10px;">
+                    <button type="submit" class="btn btn-primary btn-sm">Save</button>
+                    {% if contact %}
+                        <form method="POST" action="{{ url_for('delete_contact', contact_id=contact.id) }}" style="display:inline;">
+                            <button type="submit" class="btn btn-danger btn-sm">Remove</button>
+                        </form>
+                    {% endif %}
+                </div>
+            </form>
+        </div>
+    {% endfor %}
+</div>
+
+<script>
+function switchTab(name) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-nav button').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+    document.querySelector(`.tab-nav button[onclick="switchTab('${name}')"]`).classList.add('active');
+}
+function toggleEdit(id) {
+    const f = document.getElementById('edit-form-' + id);
+    f.style.display = f.style.display === 'none' ? 'block' : 'none';
+}
+</script>
+{% endblock %}

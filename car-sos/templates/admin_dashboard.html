@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% block title %}Admin Dashboard - Car SOS{% endblock %}
+{% block content %}
+<div class="dashboard-header">
+    <h2>Admin Dashboard</h2>
+    <p>System overview and analytics</p>
+</div>
+
+<div class="stats-grid">
+    <div class="stat-card stat-primary">
+        <div class="stat-value">{{ total_qrs }}</div>
+        <div class="stat-label">Total QR Codes</div>
+    </div>
+    <div class="stat-card stat-success">
+        <div class="stat-value">{{ claimed_qrs }}</div>
+        <div class="stat-label">Claimed</div>
+    </div>
+    <div class="stat-card stat-warning">
+        <div class="stat-value">{{ unclaimed_qrs }}</div>
+        <div class="stat-label">Unclaimed</div>
+    </div>
+    <div class="stat-card stat-accent">
+        <div class="stat-value">{{ total_users }}</div>
+        <div class="stat-label">Registered Users</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ total_vehicles }}</div>
+        <div class="stat-label">Vehicles</div>
+    </div>
+    <div class="stat-card stat-primary">
+        <div class="stat-value">{{ total_sos }}</div>
+        <div class="stat-label">Total SOS Events</div>
+    </div>
+</div>
+
+<div class="tab-nav">
+    <button class="active" onclick="switchTab('qr')">QR Codes</button>
+    <button onclick="switchTab('logs')">Recent SOS Logs</button>
+    <button onclick="switchTab('actions')">Quick Actions</button>
+</div>
+
+<div id="tab-qr" class="tab active">
+    <div class="card">
+        <div class="card-header">
+            <h3>QR Code Library</h3>
+            <a href="{{ url_for('admin_generate_qr') }}" class="btn btn-primary btn-sm">+ Generate New</a>
+        </div>
+        {% if qr_codes %}
+            <div class="qr-list">
+                {% for qr in qr_codes %}
+                    <div class="qr-card">
+                        <div class="qr-code">{{ qr.code }}</div>
+                        <div class="qr-meta">Created: {{ qr.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
+                        <div class="qr-meta">
+                            Status:
+                            {% if qr.is_claimed %}
+                                <span class="badge badge-success">Claimed</span>
+                            {% else %}
+                                <span class="badge badge-secondary">Unclaimed</span>
+                            {% endif %}
+                            {% if qr.user %}
+                                &middot; {{ qr.user.name }}
+                            {% endif %}
+                        </div>
+                        <div class="qr-actions">
+                            <a href="{{ url_for('sticker_view', code=qr.code) }}" class="btn btn-sm btn-secondary" target="_blank">View</a>
+                            <a href="{{ url_for('sticker_download', code=qr.code) }}" class="btn btn-sm btn-secondary">Download</a>
+                            {% if not qr.is_claimed %}
+                                <form method="POST" action="{{ url_for('admin_delete_qr', qr_id=qr.id) }}" style="display:inline;">
+                                    <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Delete this QR code?')">Delete</button>
+                                </form>
+                            {% endif %}
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="empty-state">
+                <div class="empty-icon">📱</div>
+                <h3>No QR Codes Generated</h3>
+                <p>Generate QR codes for vehicle stickers</p>
+                <a href="{{ url_for('admin_generate_qr') }}" class="btn btn-primary mt-4">Generate QR Codes</a>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<div id="tab-logs" class="tab">
+    <div class="card">
+        <div class="card-header">
+            <h3>Recent SOS Events</h3>
+            <a href="{{ url_for('admin_sos_logs') }}" class="btn btn-sm btn-secondary">View All</a>
+        </div>
+        {% if recent_logs %}
+            <div class="table-responsive">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Date/Time</th>
+                            <th>Vehicle</th>
+                            <th>Location</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for log in recent_logs %}
+                        <tr>
+                            <td>{{ log.contacted_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                            <td>{{ log.vehicle_rel.make }} {{ log.vehicle_rel.model }}<br><small style="color:var(--gray-500);">{{ log.vehicle_rel.plate }}</small></td>
+                            <td>
+                                {% if log.rescuer_lat and log.rescuer_lng %}
+                                    <a href="https://maps.google.com/?q={{ log.rescuer_lat }},{{ log.rescuer_lng }}" target="_blank">View Map</a>
+                                {% else %}
+                                    <span class="text-muted">N/A</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if log.call_status == 'completed' %}
+                                    <span class="badge badge-success">Completed</span>
+                                {% elif log.call_status == 'failed' %}
+                                    <span class="badge badge-danger">Failed</span>
+                                {% elif log.call_status == 'twilio_not_configured' %}
+                                    <span class="badge badge-warning">Unconfigured</span>
+                                {% else %}
+                                    <span class="badge badge-secondary">{{ log.call_status }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="empty-state">
+                <div class="empty-icon">🛡️</div>
+                <h3>No SOS Events</h3>
+                <p class="text-muted">No SOS alerts have been triggered yet</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<div id="tab-actions" class="tab">
+    <div class="grid-2">
+        <div class="card" style="text-align:center;padding:32px;">
+            <div style="font-size:2rem;margin-bottom:12px;">📱</div>
+            <h3>Generate QR Codes</h3>
+            <p class="text-muted" style="margin:8px 0 16px;">Create new QR codes for vehicle stickers</p>
+            <a href="{{ url_for('admin_generate_qr') }}" class="btn btn-primary">Generate</a>
+        </div>
+        <div class="card" style="text-align:center;padding:32px;">
+            <div style="font-size:2rem;margin-bottom:12px;">👥</div>
+            <h3>Registered Users</h3>
+            <p class="text-muted" style="margin:8px 0 16px;">View all registered users and their vehicles</p>
+            <a href="{{ url_for('admin_users') }}" class="btn btn-accent">View Users</a>
+        </div>
+        <div class="card" style="text-align:center;padding:32px;">
+            <div style="font-size:2rem;margin-bottom:12px;">🚨</div>
+            <h3>SOS Event Logs</h3>
+            <p class="text-muted" style="margin:8px 0 16px;">Complete history of all SOS triggers</p>
+            <a href="{{ url_for('admin_sos_logs') }}" class="btn btn-secondary">View Logs</a>
+        </div>
+        <div class="card" style="text-align:center;padding:32px;">
+            <div style="font-size:2rem;margin-bottom:12px;">📊</div>
+            <h3>Export QR Data</h3>
+            <p class="text-muted" style="margin:8px 0 16px;">Download QR code inventory as CSV</p>
+            <a href="{{ url_for('admin_export_qr') }}" class="btn btn-secondary">Export CSV</a>
+        </div>
+    </div>
+</div>
+
+<script>
+function switchTab(name) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-nav button').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+    document.querySelector(`.tab-nav button[onclick="switchTab('${name}')"]`).classList.add('active');
+}
+</script>
+{% endblock %}

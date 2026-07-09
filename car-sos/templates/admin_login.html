@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Admin Login - Car SOS{% endblock %}
+{% block content %}
+<div class="form-container" style="border-top: 4px solid var(--primary);">
+    <div style="text-align:center;margin-bottom:20px;">
+        <div style="font-size:2rem;margin-bottom:4px;">🔐</div>
+        <h2>Admin Login</h2>
+        <p class="subtitle">Authorized personnel only</p>
+    </div>
+    <form method="POST" class="form">
+        <div class="form-group">
+            <label for="email">Admin Email</label>
+            <input type="email" id="email" name="email" required class="form-input" placeholder="admin@carsos.com">
+        </div>
+        <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" required class="form-input" placeholder="Enter admin password">
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Access Admin Panel</button>
+    </form>
+    <p class="form-footer"><a href="{{ url_for('login') }}">User login</a></p>
+</div>
+{% endblock %}

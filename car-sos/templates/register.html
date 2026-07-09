@@ -2,7 +2,11 @@
 {% block title %}Register - Car SOS{% endblock %}
 {% block content %}
 <div class="form-container">
-    <h2>Create Account</h2>
+    <div style="text-align:center;margin-bottom:16px;">
+        <div style="font-size:2rem;margin-bottom:4px;">🔐</div>
+        <h2>Create Account</h2>
+        <p class="subtitle">Register to manage your vehicles and contacts</p>
+    </div>
     <form method="POST" class="form">
         <div class="form-group">
             <label for="name">Full Name</label>
@@ -20,8 +24,8 @@
             <label for="phone">Phone Number</label>
             <input type="tel" id="phone" name="phone" required class="form-input" placeholder="+1234567890">
         </div>
-        <button type="submit" class="btn btn-primary btn-block">Register</button>
+        <button type="submit" class="btn btn-primary btn-block">Create Account</button>
     </form>
-    <p class="form-footer">Already have an account? <a href="{{ url_for('login') }}">Login here</a></p>
+    <p class="form-footer">Already have an account? <a href="{{ url_for('login') }}">Sign in</a></p>
 </div>
 {% endblock %}

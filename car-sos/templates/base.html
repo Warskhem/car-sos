@@ -10,11 +10,15 @@
 <body>
     <nav class="navbar">
         <div class="container">
-            <a href="{{ url_for('index') }}" class="nav-brand">🚗 Car SOS</a>
+            <a href="{{ url_for('index') }}" class="nav-brand">Car SOS</a>
             <div class="nav-links">
                 {% if current_user.is_authenticated %}
-                    <a href="{{ url_for('dashboard') }}">Dashboard</a>
-                    <a href="{{ url_for('sos_history') }}">SOS History</a>
+                    {% if current_user.is_admin %}
+                        <a href="{{ url_for('admin_dashboard') }}" class="nav-admin">Admin</a>
+                    {% else %}
+                        <a href="{{ url_for('user_dashboard') }}">Dashboard</a>
+                        <a href="{{ url_for('sos_history') }}">SOS History</a>
+                    {% endif %}
                     <a href="{{ url_for('logout') }}">Logout</a>
                 {% else %}
                     <a href="{{ url_for('login') }}">Login</a>
@@ -34,8 +38,10 @@
         {% endwith %}
     </div>
 
-    <main class="container main-content">
-        {% block content %}{% endblock %}
+    <main class="main-content">
+        <div class="container">
+            {% block content %}{% endblock %}
+        </div>
     </main>
 
     <footer class="footer">

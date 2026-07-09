@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}SOS History - Car SOS{% endblock %}
+{% block title %}SOS Logs - Car SOS Admin{% endblock %}
 {% block content %}
 <div class="dashboard-header">
-    <h2>SOS Alert History</h2>
-    <p>All SOS events triggered for your vehicles</p>
+    <h2>SOS Event Logs</h2>
+    <p>Complete history of all SOS triggers across the system</p>
 </div>
 
 {% if logs %}
@@ -14,6 +14,7 @@
                     <tr>
                         <th>Date/Time</th>
                         <th>Vehicle</th>
+                        <th>Owner</th>
                         <th>Location</th>
                         <th>Status</th>
                     </tr>
@@ -22,7 +23,8 @@
                     {% for log in logs %}
                     <tr>
                         <td>{{ log.contacted_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
-                        <td>{{ log.vehicle_rel.make }} {{ log.vehicle_rel.model }}<br><small class="text-muted">{{ log.vehicle_rel.plate }}</small></td>
+                        <td>{{ log.vehicle_rel.make }} {{ log.vehicle_rel.model }}<br><small style="color:var(--gray-500);">{{ log.vehicle_rel.plate }}</small></td>
+                        <td>{{ log.vehicle_rel.user.name if log.vehicle_rel.user else 'N/A' }}</td>
                         <td>
                             {% if log.rescuer_lat and log.rescuer_lng %}
                                 <a href="https://maps.google.com/?q={{ log.rescuer_lat }},{{ log.rescuer_lng }}" target="_blank">
@@ -52,8 +54,12 @@
 {% else %}
     <div class="empty-state">
         <div class="empty-icon">🛡️</div>
-        <h3>No SOS Alerts</h3>
-        <p>Your vehicles haven't triggered any SOS events yet</p>
+        <h3>No SOS Events</h3>
+        <p>No SOS alerts have been triggered yet across the system</p>
     </div>
 {% endif %}
+
+<div class="flex-between mt-4">
+    <a href="{{ url_for('admin_dashboard') }}" class="btn btn-secondary">&larr; Back to Dashboard</a>
+</div>
 {% endblock %}

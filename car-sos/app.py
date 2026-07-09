@@ -1,8 +1,9 @@
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file, abort
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from io import BytesIO
+from sqlalchemy import func
 
 from config import Config
 from models import db, User, QRCode, Vehicle, EmergencyContact, SOSLog
@@ -21,6 +22,11 @@ login_manager.login_view = 'login'
 
 with app.app_context():
     db.create_all()
+    if not User.query.filter_by(is_admin=True).first():
+        admin = User(email='admin@carsos.com', name='Admin', phone='+0000000000', is_admin=True)
+        admin.set_password('admin123')
+        db.session.add(admin)
+        db.session.commit()
     beep_data = generate_beep_wav(duration=0.5, frequency=880, volume=0.8)
     beep_path = os.path.join(app.static_folder, 'beep.wav')
     os.makedirs(app.static_folder, exist_ok=True)
@@ -39,8 +45,18 @@ def load_user(user_id):
     return db.session.get(User, int(user_id))
 
 @app.context_processor
-def inject_site_url():
+def inject_globals():
     return {'site_url': app.config['SITE_URL']}
+
+def admin_required(f):
+    from functools import wraps
+    @wraps(f)
+    @login_required
+    def decorated(*args, **kwargs):
+        if not current_user.is_admin:
+            abort(403)
+        return f(*args, **kwargs)
+    return decorated
 
 @app.route('/')
 def index():
@@ -64,7 +80,7 @@ def register():
         db.session.commit()
         login_user(user)
         flash('Registration successful!', 'success')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('user_dashboard'))
 
     return render_template('register.html')
 
@@ -78,7 +94,9 @@ def login():
         if user and user.check_password(password):
             login_user(user)
             next_page = request.args.get('next')
-            return redirect(next_page or url_for('dashboard'))
+            if user.is_admin:
+                return redirect(next_page or url_for('admin_dashboard'))
+            return redirect(next_page or url_for('user_dashboard'))
         flash('Invalid email or password', 'danger')
 
     return render_template('login.html')
@@ -91,46 +109,10 @@ def logout():
 
 @app.route('/dashboard')
 @login_required
-def dashboard():
-    qr_codes = QRCode.query.filter_by(user_id=current_user.id).all()
+def user_dashboard():
     vehicles = Vehicle.query.filter_by(user_id=current_user.id).all()
     contacts = EmergencyContact.query.filter_by(user_id=current_user.id).order_by(EmergencyContact.priority).all()
-    return render_template('dashboard.html', qr_codes=qr_codes, vehicles=vehicles, contacts=contacts)
-
-@app.route('/dashboard/vehicle/add', methods=['POST'])
-@login_required
-def add_vehicle():
-    qr_code_id = request.form.get('qr_code_id')
-    make = request.form.get('make')
-    model = request.form.get('model')
-    year = request.form.get('year')
-    plate = request.form.get('plate')
-    color = request.form.get('color', '')
-
-    existing = Vehicle.query.filter_by(qr_code_id=qr_code_id).first()
-    if existing:
-        flash('This QR code is already linked to a vehicle', 'danger')
-        return redirect(url_for('dashboard'))
-
-    qr = db.session.get(QRCode, qr_code_id)
-    if qr and not qr.is_claimed:
-        qr.is_claimed = True
-        qr.claimed_at = datetime.utcnow()
-        qr.user_id = current_user.id
-
-    vehicle = Vehicle(
-        user_id=current_user.id,
-        qr_code_id=qr_code_id,
-        make=make,
-        model=model,
-        year=int(year),
-        plate=plate,
-        color=color
-    )
-    db.session.add(vehicle)
-    db.session.commit()
-    flash('Vehicle added!', 'success')
-    return redirect(url_for('dashboard'))
+    return render_template('user_dashboard.html', vehicles=vehicles, contacts=contacts)
 
 @app.route('/dashboard/vehicle/<int:vehicle_id>/edit', methods=['POST'])
 @login_required
@@ -146,7 +128,7 @@ def edit_vehicle(vehicle_id):
     vehicle.color = request.form.get('color', '')
     db.session.commit()
     flash('Vehicle updated!', 'success')
-    return redirect(url_for('dashboard'))
+    return redirect(url_for('user_dashboard'))
 
 @app.route('/dashboard/contact/add', methods=['POST'])
 @login_required
@@ -169,7 +151,7 @@ def add_contact():
         db.session.add(contact)
     db.session.commit()
     flash('Emergency contact saved!', 'success')
-    return redirect(url_for('dashboard'))
+    return redirect(url_for('user_dashboard'))
 
 @app.route('/dashboard/contact/<int:contact_id>/delete', methods=['POST'])
 @login_required
@@ -180,7 +162,7 @@ def delete_contact(contact_id):
     db.session.delete(contact)
     db.session.commit()
     flash('Contact removed', 'success')
-    return redirect(url_for('dashboard'))
+    return redirect(url_for('user_dashboard'))
 
 @app.route('/dashboard/history')
 @login_required
@@ -189,9 +171,43 @@ def sos_history():
     logs = SOSLog.query.filter(SOSLog.vehicle_id.in_(vehicle_ids)).order_by(SOSLog.contacted_at.desc()).all() if vehicle_ids else []
     return render_template('sos_history.html', logs=logs)
 
-@app.route('/dashboard/qr/generate', methods=['GET', 'POST'])
-@login_required
-def generate_qr():
+@app.route('/admin/login', methods=['GET', 'POST'])
+def admin_login():
+    if request.method == 'POST':
+        email = request.form.get('email')
+        password = request.form.get('password')
+        user = User.query.filter_by(email=email, is_admin=True).first()
+
+        if user and user.check_password(password):
+            login_user(user)
+            return redirect(url_for('admin_dashboard'))
+        flash('Invalid admin credentials', 'danger')
+
+    return render_template('admin_login.html')
+
+@app.route('/admin')
+@admin_required
+def admin_dashboard():
+    total_qrs = QRCode.query.count()
+    claimed_qrs = QRCode.query.filter_by(is_claimed=True).count()
+    unclaimed_qrs = total_qrs - claimed_qrs
+    total_users = User.query.filter_by(is_admin=False).count()
+    total_vehicles = Vehicle.query.count()
+    total_sos = SOSLog.query.count()
+    today_sos = SOSLog.query.filter(SOSLog.contacted_at >= datetime.utcnow().replace(hour=0,minute=0,second=0,microsecond=0)).count()
+
+    qr_codes = QRCode.query.order_by(QRCode.created_at.desc()).limit(50).all()
+    recent_logs = SOSLog.query.order_by(SOSLog.contacted_at.desc()).limit(10).all()
+
+    return render_template('admin_dashboard.html',
+        total_qrs=total_qrs, claimed_qrs=claimed_qrs, unclaimed_qrs=unclaimed_qrs,
+        total_users=total_users, total_vehicles=total_vehicles,
+        total_sos=total_sos, today_sos=today_sos,
+        qr_codes=qr_codes, recent_logs=recent_logs)
+
+@app.route('/admin/qr/generate', methods=['GET', 'POST'])
+@admin_required
+def admin_generate_qr():
     if request.method == 'POST':
         count = int(request.form.get('count', 1))
         new_codes = []
@@ -202,10 +218,51 @@ def generate_qr():
             new_codes.append(code)
         db.session.commit()
         flash(f'{count} QR codes generated!', 'success')
-        return redirect(url_for('generate_qr'))
+        return redirect(url_for('admin_generate_qr'))
 
     qr_codes = QRCode.query.order_by(QRCode.created_at.desc()).limit(50).all()
     return render_template('admin_qr.html', qr_codes=qr_codes)
+
+@app.route('/admin/qr/<int:qr_id>/delete', methods=['POST'])
+@admin_required
+def admin_delete_qr(qr_id):
+    qr = db.session.get(QRCode, qr_id)
+    if not qr:
+        abort(404)
+    if qr.is_claimed:
+        flash('Cannot delete a claimed QR code', 'danger')
+    else:
+        db.session.delete(qr)
+        db.session.commit()
+        flash('QR code deleted', 'success')
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/admin/users')
+@admin_required
+def admin_users():
+    users = User.query.filter_by(is_admin=False).order_by(User.created_at.desc()).all()
+    return render_template('admin_users.html', users=users)
+
+@app.route('/admin/sos-logs')
+@admin_required
+def admin_sos_logs():
+    logs = SOSLog.query.order_by(SOSLog.contacted_at.desc()).all()
+    return render_template('admin_sos_logs.html', logs=logs)
+
+@app.route('/admin/export/qr-codes')
+@admin_required
+def admin_export_qr():
+    import csv, io
+    qrs = QRCode.query.order_by(QRCode.created_at.desc()).all()
+    si = io.StringIO()
+    cw = csv.writer(si)
+    cw.writerow(['Code', 'Claimed', 'Claimed By', 'Claimed At', 'Created At'])
+    for q in qrs:
+        cw.writerow([q.code, q.is_claimed, q.user.email if q.user else '', q.claimed_at or '', q.created_at])
+    output = BytesIO()
+    output.write(si.getvalue().encode('utf-8'))
+    output.seek(0)
+    return send_file(output, mimetype='text/csv', as_attachment=True, download_name='qr-codes-export.csv')
 
 @app.route('/sos/<code>', methods=['GET'])
 def sos_landing(code):
@@ -295,7 +352,7 @@ def sos_register(code):
 
         login_user(user)
         flash('Vehicle registered successfully! QR code is now active for SOS.', 'success')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('user_dashboard'))
 
     return render_template('sos_register.html', code=code.upper())
 

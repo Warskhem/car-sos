@@ -9,7 +9,7 @@
         <div class="card">
             <div class="card-icon">🔐</div>
             <h3>1. Register Your Car</h3>
-            <p>Scan the QR sticker in your car, register your vehicle details and add up to 3 emergency contacts.</p>
+            <p>Scan the QR sticker in your car, register your vehicle details and add 3 emergency contacts.</p>
         </div>
         <div class="card">
             <div class="card-icon">📱</div>
@@ -19,13 +19,17 @@
         <div class="card">
             <div class="card-icon">🚨</div>
             <h3>3. SOS Triggered</h3>
-            <p>Rescuer scans QR &rarr; GPS captured &rarr; Automated calls with beep sent to all emergency contacts instantly.</p>
+            <p>Rescuer scans QR &rarr; GPS captured &rarr; Automated calls with beep sent to emergency contacts.</p>
         </div>
     </div>
 
     <div class="cta-section">
         {% if current_user.is_authenticated %}
-            <a href="{{ url_for('dashboard') }}" class="btn btn-primary btn-lg">Go to Dashboard</a>
+            {% if current_user.is_admin %}
+                <a href="{{ url_for('admin_dashboard') }}" class="btn btn-primary btn-lg">Admin Dashboard</a>
+            {% else %}
+                <a href="{{ url_for('user_dashboard') }}" class="btn btn-primary btn-lg">My Dashboard</a>
+            {% endif %}
         {% else %}
             <a href="{{ url_for('login') }}" class="btn btn-primary btn-lg">Login</a>
             <a href="{{ url_for('register') }}" class="btn btn-secondary btn-lg">Register</a>
@@ -42,7 +46,7 @@
         </div>
         <div class="step">
             <span class="step-num">2</span>
-            <p>The owner scans the QR to register vehicle details and emergency contacts.</p>
+            <p>The owner scans the QR to register vehicle details and 3 emergency contacts.</p>
         </div>
         <div class="step">
             <span class="step-num">3</span>
@@ -55,13 +59,13 @@
     </div>
 </div>
 
-<div class="info-section" style="border-top: none; padding-top: 0;">
+<div class="info-section" style="border-top:none;padding-top:0;">
     <h2>Privacy First</h2>
-    <div class="hero-cards" style="max-width: 600px; margin: 0 auto;">
-        <div class="card" style="text-align: center; padding: 20px;">
-            <div class="card-icon">🔒</div>
+    <div class="hero-cards" style="max-width:600px;margin:0 auto;">
+        <div class="card" style="text-align:center;padding:24px;">
+            <div style="font-size:2rem;margin-bottom:8px;">🔒</div>
             <h3>Your data stays private</h3>
-            <p style="font-size: 0.9em; color: var(--gray-600);">Emergency contacts are never revealed to the person scanning the QR code. Only vehicle identification information is shown.</p>
+            <p class="text-muted" style="font-size:0.9rem;">Emergency contacts are never revealed to the person scanning the QR code. Only vehicle information is shown on the SOS page.</p>
         </div>
     </div>
 </div>

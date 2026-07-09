@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Users - Car SOS Admin{% endblock %}
+{% block content %}
+<div class="dashboard-header">
+    <h2>Registered Users</h2>
+    <p>{{ users|length }} user(s) registered</p>
+</div>
+
+{% if users %}
+    <div class="card">
+        <div class="table-responsive">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Phone</th>
+                        <th>Vehicles</th>
+                        <th>Registered</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in users %}
+                    <tr>
+                        <td><strong>{{ user.name }}</strong></td>
+                        <td>{{ user.email }}</td>
+                        <td>{{ user.phone }}</td>
+                        <td>{{ user.vehicles|length }}</td>
+                        <td>{{ user.created_at.strftime('%Y-%m-%d') }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+{% else %}
+    <div class="empty-state">
+        <div class="empty-icon">👥</div>
+        <h3>No Users Yet</h3>
+        <p>Users will appear here once they register via QR code scanning</p>
+    </div>
+{% endif %}
+
+<div class="flex-between mt-4">
+    <a href="{{ url_for('admin_dashboard') }}" class="btn btn-secondary">&larr; Back to Dashboard</a>
+</div>
+{% endblock %}
