@@ -417,6 +417,64 @@ def sos_trigger(code):
         'log_id': log.id
     })
 
+@app.route('/sos/<code>/auto-trigger-primary', methods=['POST'])
+def sos_auto_trigger_primary(code):
+    qr = QRCode.query.filter_by(code=code.upper()).first()
+    if not qr or not qr.is_claimed:
+        return jsonify({'status': 'error', 'message': 'Invalid QR code'}), 404
+
+    vehicle = Vehicle.query.filter_by(qr_code_id=qr.id).first()
+    if not vehicle:
+        return jsonify({'status': 'error', 'message': 'No vehicle found'}), 404
+
+    data = request.get_json(silent=True) or {}
+    lat = data.get('lat')
+    lng = data.get('lng')
+
+    primary = EmergencyContact.query.filter_by(user_id=qr.user_id, priority=1).first()
+    if not primary:
+        return jsonify({'status': 'error', 'message': 'No primary contact found'}), 404
+
+    location_url = f"https://maps.google.com/?q={lat},{lng}" if lat and lng else "Location not available"
+    vehicle_info = {
+        'make': vehicle.make, 'model': vehicle.model,
+        'year': vehicle.year, 'plate': vehicle.plate,
+        'color': vehicle.color or 'unknown'
+    }
+
+    call_result = {'status': 'skipped'}
+    sms_result = {'status': 'skipped'}
+    if twilio_service.is_configured():
+        call_result = twilio_service.make_sos_call(
+            to_number=primary.phone,
+            vehicle_info=vehicle_info,
+            location_url=location_url,
+            site_url=app.config['SITE_URL']
+        )
+        sms_result = twilio_service.send_location_sms(
+            to_number=primary.phone,
+            vehicle_info=vehicle_info,
+            location_url=location_url
+        )
+
+    log = SOSLog(
+        qr_code_id=qr.id, vehicle_id=vehicle.id,
+        rescuer_lat=lat, rescuer_lng=lng,
+        call_status='auto_primary'
+    )
+    db.session.add(log)
+    db.session.commit()
+
+    return jsonify({
+        'status': 'success',
+        'message': 'Primary contact alerted',
+        'vehicle': f"{vehicle.make} {vehicle.model} ({vehicle.plate})",
+        'location': location_url,
+        'call': call_result.get('status'),
+        'sms': sms_result.get('status'),
+        'primary_name': primary.name
+    })
+
 @app.route('/twilio/handle-input', methods=['POST'])
 def twilio_handle_input():
     from twilio.twiml.voice_response import VoiceResponse

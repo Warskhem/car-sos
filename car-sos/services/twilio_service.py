@@ -26,6 +26,28 @@ class TwilioService:
         except Exception as e:
             return {'status': 'failed', 'error': str(e)}
 
+    def send_location_sms(self, to_number, vehicle_info, location_url):
+        if not self.is_configured():
+            return {'status': 'failed', 'error': 'Twilio not configured'}
+
+        map_short = f"maps.google.com/?q={location_url.split('=')[-1]}" if '=' in location_url else location_url
+        body = (
+            f"🚨 SOS ALERT: {vehicle_info['make']} {vehicle_info['model']} "
+            f"({vehicle_info['plate']}) needs emergency assistance!\n"
+            f"📍 Location: {map_short}\n"
+            f"📌 {location_url}"
+        )
+
+        try:
+            msg = self.client.messages.create(
+                to=to_number,
+                from_=self.from_number,
+                body=body
+            )
+            return {'status': 'sent', 'sid': msg.sid}
+        except Exception as e:
+            return {'status': 'failed', 'error': str(e)}
+
     def _build_sos_twiml(self, vehicle_info, location_url, site_url):
         response = VoiceResponse()
         gather = Gather(num_digits=1, action=f'{site_url}/twilio/handle-input', method='POST', timeout=5)

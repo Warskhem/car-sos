@@ -65,9 +65,9 @@
         </div>
 
         <div class="sos-btn-wrap">
-            <button id="sosBtn" class="sos-trigger pulse" onclick="triggerSOS()">
-                🚨 SEND SOS
-                <span class="sub">Alert emergency contacts now</span>
+            <button id="sosBtn" class="sos-trigger" onclick="triggerAllContacts()" style="opacity:0.6;transform:scale(0.95);">
+                🚨 SEND SOS TO ALL CONTACTS
+                <span class="sub">Primary contact is being alerted automatically</span>
             </button>
         </div>
 
@@ -88,6 +88,7 @@
 <script>
 let capturedLat = null;
 let capturedLng = null;
+let autoTriggered = false;
 
 function getLocation() {
     const el = document.getElementById('gpsStatus');
@@ -98,20 +99,70 @@ function getLocation() {
                 capturedLng = pos.coords.longitude;
                 el.className = 'gps-status ready';
                 el.innerHTML = `📍 Location captured &middot; <a href="https://maps.google.com/?q=${capturedLat},${capturedLng}" target="_blank" style="color:#155724;">View map</a>`;
+                autoTriggerPrimary();
             },
             function(err) {
                 el.className = 'gps-status error';
                 el.innerHTML = '⚠️ Unable to get GPS. SOS will be sent without location.';
+                autoTriggerPrimary();
             },
             { enableHighAccuracy: true, timeout: 10000 }
         );
     } else {
         el.className = 'gps-status error';
         el.innerHTML = '⚠️ GPS not available on this device.';
+        autoTriggerPrimary();
     }
 }
 
-function triggerSOS() {
+function autoTriggerPrimary() {
+    if (autoTriggered) return;
+    autoTriggered = true;
+
+    const panel = document.getElementById('statusPanel');
+    const icon = document.getElementById('statusIcon');
+    const msg = document.getElementById('statusMsg');
+    const detail = document.getElementById('statusDetail');
+    const btn = document.getElementById('sosBtn');
+
+    panel.className = 'status-panel sending show';
+    icon.textContent = '📞';
+    msg.textContent = 'Calling primary contact...';
+    detail.textContent = 'Sending GPS location via SMS';
+
+    fetch('{{ url_for("sos_auto_trigger_primary", code=code) }}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lat: capturedLat, lng: capturedLng })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.status === 'success') {
+            panel.className = 'status-panel success show';
+            icon.textContent = '✅';
+            msg.textContent = `${data.primary_name} has been alerted`;
+            detail.innerHTML = `<strong>Call:</strong> ${data.call === 'initiated' ? '📞 Initiated' : '⚠️ Skipped'}<br><strong>SMS with GPS:</strong> ${data.sms === 'sent' ? '📨 Sent' : '⚠️ Skipped'}<br><strong>Vehicle:</strong> ${data.vehicle}`;
+            const flash = document.getElementById('beepFlash');
+            flash.style.display = 'block';
+            flash.style.animation = 'beepFlashLong 10s';
+            playBeepSound();
+            setTimeout(() => { flash.style.display = 'none'; }, 10000);
+        } else {
+            panel.className = 'status-panel error show';
+            icon.textContent = '⚠️';
+            msg.textContent = data.message || 'Could not alert primary contact';
+            detail.textContent = 'Use the manual SOS button below to try again';
+        }
+    })
+    .catch(() => {
+        panel.className = 'status-panel error show';
+        icon.textContent = '⚠️';
+        msg.textContent = 'Network error';
+        detail.textContent = 'Use the manual SOS button below';
+    });
+}
+
+function triggerAllContacts() {
     const btn = document.getElementById('sosBtn');
     const panel = document.getElementById('statusPanel');
     const icon = document.getElementById('statusIcon');
@@ -124,7 +175,7 @@ function triggerSOS() {
     panel.className = 'status-panel sending show';
     icon.textContent = '⏳';
     msg.textContent = 'Sending SOS alert...';
-    detail.textContent = 'Notifying emergency contacts';
+    detail.textContent = 'Notifying all emergency contacts';
 
     fetch('{{ url_for("sos_trigger", code=code) }}', {
         method: 'POST',
@@ -150,7 +201,7 @@ function triggerSOS() {
             msg.textContent = data.message || 'Failed to send SOS';
             detail.textContent = 'Please try again';
             btn.disabled = false;
-            btn.innerHTML = '🚨 SEND SOS';
+            btn.innerHTML = '🚨 SEND SOS TO ALL CONTACTS';
             btn.className = 'sos-trigger pulse';
         }
     })
@@ -160,7 +211,7 @@ function triggerSOS() {
         msg.textContent = 'Network error';
         detail.textContent = 'Please try again';
         btn.disabled = false;
-        btn.innerHTML = '🚨 SEND SOS';
+        btn.innerHTML = '🚨 SEND SOS TO ALL CONTACTS';
         btn.className = 'sos-trigger pulse';
     });
 }
