@@ -119,7 +119,7 @@
                                     <span class="badge badge-success">Completed</span>
                                 {% elif log.call_status == 'failed' %}
                                     <span class="badge badge-danger">Failed</span>
-                                {% elif log.call_status == 'twilio_not_configured' %}
+                                {% elif log.call_status == 'service_not_configured' %}
                                     <span class="badge badge-warning">Unconfigured</span>
                                 {% else %}
                                     <span class="badge badge-secondary">{{ log.call_status }}</span>

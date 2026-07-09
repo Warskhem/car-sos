@@ -3,5 +3,5 @@ flask-sqlalchemy==3.1.1
 flask-login==0.6.3
 qrcode[pil]==7.4.2
 pillow>=11.0.0
-twilio==9.4.5
+plivo>=4.44.0
 werkzeug==3.1.3

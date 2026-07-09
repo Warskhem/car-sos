@@ -9,7 +9,7 @@ from config import Config
 from models import db, User, QRCode, Vehicle, EmergencyContact, SOSLog
 from utils.qr_generator import generate_unique_code, generate_qr_image, qr_to_base64
 from utils.beep_generator import generate_beep_wav, generate_sos_pattern
-from services.twilio_service import TwilioService
+from services.plivo_service import PlivoService
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -34,10 +34,10 @@ with app.app_context():
         with open(beep_path, 'wb') as f:
             f.write(beep_data)
 
-twilio_service = TwilioService(
-    account_sid=app.config['TWILIO_ACCOUNT_SID'],
-    auth_token=app.config['TWILIO_AUTH_TOKEN'],
-    from_number=app.config['TWILIO_PHONE_NUMBER']
+twilio_service = PlivoService(
+    auth_id=app.config['PLIVO_AUTH_ID'],
+    auth_token=app.config['PLIVO_AUTH_TOKEN'],
+    from_number=app.config['PLIVO_PHONE_NUMBER']
 )
 
 @login_manager.user_loader
@@ -404,7 +404,7 @@ def sos_trigger(code):
                 calls_initiated += 1
         log.call_status = 'completed' if calls_initiated > 0 else 'failed'
     else:
-        log.call_status = 'twilio_not_configured'
+        log.call_status = 'service_not_configured'
 
     db.session.commit()
 
@@ -475,16 +475,23 @@ def sos_auto_trigger_primary(code):
         'primary_name': primary.name
     })
 
-@app.route('/twilio/handle-input', methods=['POST'])
-def twilio_handle_input():
-    from twilio.twiml.voice_response import VoiceResponse
-    response = VoiceResponse()
-    response.say("Repeating the SOS alert.", voice='alice')
-    response.play(f"{app.config['SITE_URL']}/static/beep.wav")
-    response.pause(length=1)
-    response.play(f"{app.config['SITE_URL']}/static/beep.wav")
-    response.hangup()
-    return str(response), 200, {'Content-Type': 'text/xml'}
+@app.route('/plivo/answer-sos', methods=['GET'])
+def plivo_answer_sos():
+    make = request.args.get('make', 'Unknown')
+    model = request.args.get('model', 'Unknown')
+    year = request.args.get('year', '')
+    plate = request.args.get('plate', '')
+    color = request.args.get('color', '')
+    location = request.args.get('location', 'Location not available')
+
+    xml = f'''<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Speak voice="WOMAN">EMERGENCY SOS ALERT. Vehicle {make} {model}, year {year}, plate number {plate}, color {color}. Location: {location}. An accident or breakdown has been reported. Please respond immediately.</Speak>
+    <Play>{app.config["SITE_URL"]}/static/beep.wav</Play>
+    <Play>{app.config["SITE_URL"]}/static/beep.wav</Play>
+    <Play>{app.config["SITE_URL"]}/static/beep.wav</Play>
+</Response>'''
+    return xml, 200, {'Content-Type': 'application/xml'}
 
 @app.route('/sticker/<code>')
 def sticker_view(code):
