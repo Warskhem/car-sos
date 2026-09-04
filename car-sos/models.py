@@ -73,6 +73,8 @@ class SOSLog(db.Model):
     rescuer_lng = db.Column(db.Float, nullable=True)
     contacted_at = db.Column(db.DateTime, default=datetime.utcnow)
     call_status = db.Column(db.String(20), default='pending')
+    owner_call_status = db.Column(db.String(20), nullable=True, default='pending')
+    primary_call_status = db.Column(db.String(20), nullable=True, default='pending')
 
     qr_code_rel = db.relationship('QRCode', backref=db.backref('sos_logs', lazy=True))
     vehicle_rel = db.relationship('Vehicle', backref=db.backref('sos_logs', lazy=True))

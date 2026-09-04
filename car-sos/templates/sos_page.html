@@ -65,9 +65,9 @@
         </div>
 
         <div class="sos-btn-wrap">
-            <button id="sosBtn" class="sos-trigger pulse" onclick="triggerAllContacts()">
-                🚨 SEND SOS TO ALL CONTACTS
-                <span class="sub">Primary contact is alerted automatically &middot; Use this for all 3</span>
+            <button id="sosBtn" class="sos-trigger pulse" onclick="alertOwner()">
+                🚨 ALERT VEHICLE OWNER
+                <span class="sub">Calls the owner first &middot; If no answer, emergency contact is notified</span>
             </button>
         </div>
 
@@ -83,14 +83,12 @@
     </div>
 </div>
 
-<div id="simulatedSms" style="display:none;"></div>
-
 <div id="beepFlash" class="beep-flash"></div>
 
 <script>
 let capturedLat = null;
 let capturedLng = null;
-let autoTriggered = false;
+let polling = false;
 
 function getLocation() {
     const el = document.getElementById('gpsStatus');
@@ -101,88 +99,36 @@ function getLocation() {
                 capturedLng = pos.coords.longitude;
                 el.className = 'gps-status ready';
                 el.innerHTML = `📍 Location captured &middot; <a href="https://maps.google.com/?q=${capturedLat},${capturedLng}" target="_blank" style="color:#155724;">View map</a>`;
-                autoTriggerPrimary();
             },
             function(err) {
                 el.className = 'gps-status error';
                 el.innerHTML = '⚠️ Unable to get GPS. SOS will be sent without location.';
-                autoTriggerPrimary();
             },
             { enableHighAccuracy: true, timeout: 10000 }
         );
     } else {
         el.className = 'gps-status error';
         el.innerHTML = '⚠️ GPS not available on this device.';
-        autoTriggerPrimary();
     }
 }
 
-function autoTriggerPrimary() {
-    if (autoTriggered) return;
-    autoTriggered = true;
-
-    const panel = document.getElementById('statusPanel');
-    const icon = document.getElementById('statusIcon');
-    const msg = document.getElementById('statusMsg');
-    const detail = document.getElementById('statusDetail');
-    const btn = document.getElementById('sosBtn');
-
-    panel.className = 'status-panel sending show';
-    icon.textContent = '📞';
-    msg.textContent = 'Calling primary contact...';
-    detail.textContent = 'Sending GPS location via SMS';
-
-    fetch('{{ url_for("sos_auto_trigger_primary", code=code) }}', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lat: capturedLat, lng: capturedLng })
-    })
-    .then(res => res.json())
-    .then(data => {
-        if (data.status === 'success') {
-            panel.className = 'status-panel success show';
-            icon.textContent = '✅';
-            const callSkipped = data.call === 'skipped' || data.call === 'failed';
-            msg.textContent = callSkipped ? `${data.primary_name} alerted (simulated)` : `${data.primary_name} has been alerted`;
-            detail.innerHTML = `<strong>Call:</strong> ${data.call === 'initiated' ? '📞 Connected' : '📞 Simulated (demo)'}<br><strong>SMS with GPS:</strong> ${data.sms === 'sent' ? '📨 Sent' : '📨 Simulated (demo)'}<br><strong>Vehicle:</strong> ${data.vehicle}`;
-            const flash = document.getElementById('beepFlash');
-            flash.style.display = 'block';
-            flash.style.animation = 'beepFlashLong 10s';
-            playBeepSound();
-            setTimeout(() => { flash.style.display = 'none'; }, 10000);
-            if (callSkipped) {
-                simulateCall(data);
-                simulateSms(data);
-            }
-        } else {
-            panel.className = 'status-panel error show';
-            icon.textContent = '⚠️';
-            msg.textContent = data.message || 'Could not alert primary contact';
-            detail.textContent = 'Use the manual SOS button below to try again';
-        }
-    })
-    .catch(() => {
-        panel.className = 'status-panel error show';
-        icon.textContent = '⚠️';
-        msg.textContent = 'Network error';
-        detail.textContent = 'Use the manual SOS button below';
-    });
-}
-
-function triggerAllContacts() {
+function alertOwner() {
     const btn = document.getElementById('sosBtn');
     const panel = document.getElementById('statusPanel');
     const icon = document.getElementById('statusIcon');
     const msg = document.getElementById('statusMsg');
     const detail = document.getElementById('statusDetail');
+
+    if (polling) return;
+    polling = true;
 
     btn.disabled = true;
-    btn.innerHTML = '⏳ SENDING...';
+    btn.innerHTML = '⏳ CALLING OWNER...';
     btn.className = 'sos-trigger';
     panel.className = 'status-panel sending show';
-    icon.textContent = '⏳';
-    msg.textContent = 'Sending SOS alert...';
-    detail.textContent = 'Notifying all emergency contacts';
+    icon.textContent = '📞';
+    msg.textContent = 'Calling vehicle owner...';
+    detail.textContent = 'If there is no answer, the emergency contact will be notified.';
 
     fetch('{{ url_for("sos_trigger", code=code) }}', {
         method: 'POST',
@@ -191,26 +137,18 @@ function triggerAllContacts() {
     })
     .then(res => res.json())
     .then(data => {
-        if (data.status === 'success') {
-            panel.className = 'status-panel success show';
-            icon.textContent = '✅';
-            const noCalls = data.calls_sent === 0;
-            msg.innerHTML = noCalls ? `SOS sent (simulated)` : `SOS sent successfully`;
-            detail.innerHTML = `<strong>Vehicle:</strong> ${data.vehicle}<br>${data.calls_sent} contacts notified${noCalls ? ' (demo mode)' : ''}`;
-            btn.innerHTML = '✅ SOS SENT';
-            const flash = document.getElementById('beepFlash');
-            flash.style.display = 'block';
-            flash.style.animation = 'beepFlashLong 10s';
-            playBeepSound();
-            setTimeout(() => { flash.style.display = 'none'; }, 10000);
+        if (data.status === 'started') {
+            detail.textContent = `${data.vehicle}`;
+            startPolling(data.log_id);
         } else {
             panel.className = 'status-panel error show';
-            icon.textContent = '❌';
-            msg.textContent = data.message || 'Failed to send SOS';
+            icon.textContent = '⚠️';
+            msg.textContent = data.message || 'Could not start the alert';
             detail.textContent = 'Please try again';
             btn.disabled = false;
-            btn.innerHTML = '🚨 SEND SOS TO ALL CONTACTS';
+            btn.innerHTML = '🚨 ALERT VEHICLE OWNER';
             btn.className = 'sos-trigger pulse';
+            polling = false;
         }
     })
     .catch(() => {
@@ -219,9 +157,75 @@ function triggerAllContacts() {
         msg.textContent = 'Network error';
         detail.textContent = 'Please try again';
         btn.disabled = false;
-        btn.innerHTML = '🚨 SEND SOS TO ALL CONTACTS';
+        btn.innerHTML = '🚨 ALERT VEHICLE OWNER';
         btn.className = 'sos-trigger pulse';
+        polling = false;
     });
+}
+
+function startPolling(logId) {
+    const panel = document.getElementById('statusPanel');
+    const icon = document.getElementById('statusIcon');
+    const msg = document.getElementById('statusMsg');
+    const detail = document.getElementById('statusDetail');
+    const btn = document.getElementById('sosBtn');
+
+    const poll = setInterval(() => {
+        fetch('{{ url_for("sos_status", code=code, log_id=0) }}'.replace('/0', `/${logId}`))
+        .then(res => res.json())
+        .then(data => {
+            if (data.status !== 'success') return;
+            const owner = data.owner_call_status;
+            const primary = data.primary_call_status;
+
+            if (owner === 'not_answered' || owner === 'simulated' || primary === 'simulated') {
+                msg.textContent = 'No answer from owner — contacting emergency contact...';
+                detail.textContent = 'The primary emergency contact is being called.';
+                icon.textContent = '📞';
+            }
+            if (owner === 'answered') {
+                clearInterval(poll);
+                polling = false;
+                panel.className = 'status-panel success show';
+                icon.textContent = '✅';
+                msg.textContent = 'Vehicle owner has been alerted and answered.';
+                detail.textContent = 'The owner was successfully reached.';
+                btn.innerHTML = '✅ OWNER ALERTED';
+            }
+            if (primary === 'completed' || primary === 'simulated') {
+                clearInterval(poll);
+                polling = false;
+                panel.className = 'status-panel success show';
+                icon.textContent = '✅';
+                msg.textContent = 'Emergency contact has been notified.';
+                detail.textContent = 'Owner did not answer, so the primary emergency contact was called.';
+                btn.innerHTML = '✅ EMERGENCY CONTACT ALERTED';
+                playBeepSound();
+            }
+            if (primary === 'no_primary_contact' || primary === 'failed') {
+                clearInterval(poll);
+                polling = false;
+                panel.className = 'status-panel error show';
+                icon.textContent = '⚠️';
+                msg.textContent = 'No emergency contact could be reached.';
+                detail.textContent = 'Owner was not answered and no primary contact was available.';
+                btn.innerHTML = '✅ ALERT ATTEMPTED';
+            }
+            if (owner === 'failed' && primary === 'pending') {
+                clearInterval(poll);
+                polling = false;
+                panel.className = 'status-panel error show';
+                icon.textContent = '❌';
+                msg.textContent = 'Could not reach the owner.';
+                detail.textContent = 'The alert service is not fully configured.';
+                btn.innerHTML = '✅ ATTEMPTED';
+            }
+        })
+        .catch(() => {});
+    }, 2000);
+
+    // Safety stop after 90 seconds even if no terminal state observed
+    setTimeout(() => { clearInterval(poll); polling = false; }, 90000);
 }
 
 function playBeepSound() {
@@ -247,34 +251,6 @@ function playBeepSound() {
             osc.stop(startTime + beepDuration);
         }
     } catch(e) { /* beep unavailable */ }
-}
-
-function simulateCall(data) {
-    try {
-        const msg = `EMERGENCY SOS ALERT. Vehicle ${data.vehicle}. Location: https://maps.google.com/?q=${capturedLat},${capturedLng}. An accident or breakdown has been reported. Please respond immediately.`;
-        const utterance = new SpeechSynthesisUtterance(msg);
-        utterance.rate = 0.9;
-        utterance.pitch = 1.1;
-        utterance.lang = 'en-US';
-        window.speechSynthesis.speak(utterance);
-    } catch(e) { /* speech unavailable */ }
-}
-
-function simulateSms(data) {
-    const sms = document.getElementById('simulatedSms');
-    if (!sms) return;
-    const loc = capturedLat && capturedLng ? `maps.google.com/?q=${capturedLat},${capturedLng}` : 'Location not available';
-    sms.innerHTML = `
-        <div style="background:#e8f5e9;border:2px solid #4caf50;border-radius:12px;padding:14px;margin-top:12px;font-size:0.85rem;">
-            <div style="font-weight:700;color:#2e7d32;margin-bottom:6px;">📨 SIMULATED SMS to ${data.primary_name || 'Primary Contact'}</div>
-            <div style="color:#333;line-height:1.5;">
-                🚨 SOS ALERT: ${data.vehicle} needs emergency assistance!<br>
-                📍 Location: ${loc}<br>
-                🔗 <a href="https://${loc}" target="_blank" style="color:#1a73e8;">Open in Maps</a>
-            </div>
-        </div>
-    `;
-    sms.style.display = 'block';
 }
 
 getLocation();

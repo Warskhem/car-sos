@@ -11,3 +11,7 @@ class Config:
     PLIVO_AUTH_TOKEN = os.environ.get('PLIVO_AUTH_TOKEN', '')
     PLIVO_PHONE_NUMBER = os.environ.get('PLIVO_PHONE_NUMBER', '')
     SITE_URL = os.environ.get('SITE_URL', 'https://fantastic-halibut-q7xjj4jg7wxwh4qpg-5000.app.github.dev')
+
+    # Owner-first SOS escalation
+    OWNER_CALL_TIMEOUT_SECONDS = int(os.environ.get('OWNER_CALL_TIMEOUT_SECONDS', 30))
+    SOS_COOLDOWN_MINUTES = int(os.environ.get('SOS_COOLDOWN_MINUTES', 5))

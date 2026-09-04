@@ -1,4 +1,6 @@
 import os
+import threading
+import time
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, send_file, abort
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
@@ -356,6 +358,119 @@ def sos_register(code):
 
     return render_template('sos_register.html', code=code.upper())
 
+def _within_cooldown(qr_id):
+    """Return True if a recent alert for this QR is still inside the cooldown window."""
+    cooldown = app.config.get('SOS_COOLDOWN_MINUTES', 0)
+    if cooldown <= 0:
+        return False
+    latest = (SOSLog.query
+              .filter_by(qr_code_id=qr_id)
+              .order_by(SOSLog.contacted_at.desc())
+              .first())
+    if not latest:
+        return False
+    cutoff = datetime.utcnow() - timedelta(minutes=cooldown)
+    return latest.contacted_at >= cutoff
+
+def _place_owner_call(log, owner, vehicle_info, location_url, timeout_seconds):
+    """Call the car owner first; record owner_call_status."""
+    if not owner or not owner.phone:
+        log.owner_call_status = 'no_owner_phone'
+        db.session.commit()
+        return False
+
+    hangup_url = (f"{app.config['SITE_URL']}/plivo/owner-callback?"
+                  f"log_id={log.id}")
+    result = twilio_service.make_sos_call_with_timeout(
+        to_number=owner.phone,
+        vehicle_info=vehicle_info,
+        location_url=location_url,
+        site_url=app.config['SITE_URL'],
+        timeout_seconds=timeout_seconds,
+        hangup_url=hangup_url
+    )
+
+    if result.get('status') == 'initiated':
+        log.owner_call_status = 'ringing'
+    elif result.get('status') == 'simulated':
+        log.owner_call_status = 'simulated'
+    else:
+        log.owner_call_status = 'failed'
+    db.session.commit()
+
+    # In demo/simulation mode there is no real async ring callback, so mark the
+    # owner as "not answered" after the ring timeout so the flow escalates to
+    # the primary contact (mirroring the configured behaviour).
+    return result.get('status') in ('initiated',)
+
+def _call_primary_contact(log, primary, vehicle_info, location_url):
+    if not primary:
+        log.primary_call_status = 'no_primary_contact'
+        db.session.commit()
+        return
+    result = twilio_service.make_sos_call(
+        to_number=primary.phone,
+        vehicle_info=vehicle_info,
+        location_url=location_url,
+        site_url=app.config['SITE_URL']
+    )
+    if result.get('status') == 'initiated':
+        log.primary_call_status = 'completed'
+    elif result.get('status') == 'simulated':
+        log.primary_call_status = 'simulated'
+    else:
+        log.primary_call_status = 'failed'
+    log.call_status = log.primary_call_status or log.owner_call_status
+    db.session.commit()
+
+def _run_sos_escalation(log_id, owner_phone, primary_id, vehicle_info, location_url, timeout_seconds):
+    """Background worker: call owner, wait ring window, escalate to primary if no answer."""
+    with app.app_context():
+        log = db.session.get(SOSLog, log_id)
+        if not log:
+            return
+
+        owner = None
+        if owner_phone:
+            # owner_phone was captured at trigger time; re-fetch user by phone
+            owner = User.query.filter_by(phone=owner_phone).first()
+
+        primary = db.session.get(EmergencyContact, primary_id) if primary_id else None
+
+        # Simulate the ring window before escalation so we don't block API response.
+        # In real mode the hangup_url/webhook records the true answer status.
+        owner_answered = False
+        if log.owner_call_status == 'ringing':
+            time.sleep(min(timeout_seconds, 30))
+
+        if log.owner_call_status in ('ringing', 'simulated'):
+            # No confirmed answer within the window -> escalate to primary
+            if log.owner_call_status == 'simulated':
+                log.owner_call_status = 'not_answered'
+            else:
+                log.owner_call_status = 'not_answered'
+            db.session.commit()
+            _call_primary_contact(log, primary, vehicle_info, location_url)
+        else:
+            # Owner answered or no owner phone -> done
+            log.call_status = log.owner_call_status
+            db.session.commit()
+
+@app.route('/plivo/owner-callback')
+def plivo_owner_callback():
+    """Webhook recording whether the owner's call was answered (async)."""
+    log_id = request.args.get('log_id', type=int)
+    status = (request.args.get('status') or request.args.get('CallStatus') or '').lower()
+    if log_id:
+        log = db.session.get(SOSLog, log_id)
+        if log:
+            if 'answer' in status:
+                log.owner_call_status = 'answered'
+            else:
+                log.owner_call_status = 'not_answered'
+            db.session.commit()
+    return 'OK', 200
+
 @app.route('/sos/<code>/trigger', methods=['POST'])
 def sos_trigger(code):
     qr = QRCode.query.filter_by(code=code.upper()).first()
@@ -366,18 +481,30 @@ def sos_trigger(code):
     if not vehicle:
         return jsonify({'status': 'error', 'message': 'No vehicle found'}), 404
 
+    # Cooldown: reject repeated prank scans within the window
+    if _within_cooldown(qr.id):
+        remaining = app.config.get('SOS_COOLDOWN_MINUTES', 5)
+        return jsonify({
+            'status': 'error',
+            'message': f'This vehicle was alerted recently. Please wait {remaining} minute(s).'
+        }), 429
+
     data = request.get_json(silent=True) or {}
     lat = data.get('lat')
     lng = data.get('lng')
 
-    user = db.session.get(User, qr.user_id)
-    contacts = EmergencyContact.query.filter_by(user_id=qr.user_id).order_by(EmergencyContact.priority).all()
+    owner = db.session.get(User, qr.user_id)
+    primary = (EmergencyContact.query
+               .filter_by(user_id=qr.user_id, priority=1)
+               .first())
 
     log = SOSLog(
         qr_code_id=qr.id,
         vehicle_id=vehicle.id,
         rescuer_lat=lat,
         rescuer_lng=lng,
+        owner_call_status='pending',
+        primary_call_status='pending',
     )
     db.session.add(log)
     db.session.flush()
@@ -391,29 +518,48 @@ def sos_trigger(code):
         'color': vehicle.color or 'unknown'
     }
 
-    calls_initiated = 0
-    if twilio_service.is_configured():
-        for contact in contacts:
-            result = twilio_service.make_sos_call(
-                to_number=contact.phone,
-                vehicle_info=vehicle_info,
-                location_url=location_url,
-                site_url=app.config['SITE_URL']
-            )
-            if result.get('status') == 'initiated':
-                calls_initiated += 1
-        log.call_status = 'completed' if calls_initiated > 0 else 'failed'
-    else:
-        log.call_status = 'service_not_configured'
+    # Call the owner first (in background) then escalate to primary if no answer.
+    timeout_seconds = app.config.get('OWNER_CALL_TIMEOUT_SECONDS', 30)
+    owner_phone = owner.phone if owner else None
 
+    _place_owner_call(log, owner, vehicle_info, location_url, timeout_seconds)
     db.session.commit()
+
+    worker = threading.Thread(
+        target=_run_sos_escalation,
+        args=(log.id, owner_phone, primary.id if primary else None,
+              vehicle_info, location_url, timeout_seconds),
+        daemon=True
+    )
+    worker.start()
+
+    return jsonify({
+        'status': 'started',
+        'message': 'Calling vehicle owner... Primary contact will be notified if there is no answer.',
+        'vehicle': f"{vehicle.make} {vehicle.model} ({vehicle.plate})",
+        'location': location_url,
+        'log_id': log.id
+    })
+
+@app.route('/sos/<code>/status/<int:log_id>')
+def sos_status(code, log_id):
+    """Polling endpoint so the SOS page can show live escalation progress."""
+    qr = QRCode.query.filter_by(code=code.upper()).first()
+    if not qr:
+        return jsonify({'status': 'error', 'message': 'Invalid QR code'}), 404
+    log = db.session.get(SOSLog, log_id)
+    if not log or log.qr_code_id != qr.id:
+        return jsonify({'status': 'error', 'message': 'Log not found'}), 404
+
+    owner_status = log.owner_call_status or 'pending'
+    primary_status = log.primary_call_status or 'pending'
+    call_status = log.call_status or 'pending'
 
     return jsonify({
         'status': 'success',
-        'message': 'SOS alert sent to all emergency contacts',
-        'vehicle': f"{vehicle.make} {vehicle.model} ({vehicle.plate})",
-        'location': location_url,
-        'calls_sent': calls_initiated if twilio_service.is_configured() else 0,
+        'owner_call_status': owner_status,
+        'primary_call_status': primary_status,
+        'call_status': call_status,
         'log_id': log.id
     })
 

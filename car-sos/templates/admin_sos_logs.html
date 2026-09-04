@@ -16,7 +16,8 @@
                         <th>Vehicle</th>
                         <th>Owner</th>
                         <th>Location</th>
-                        <th>Status</th>
+                        <th>Owner Call</th>
+                        <th>Emergency Contact</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -35,14 +36,31 @@
                             {% endif %}
                         </td>
                         <td>
-                            {% if log.call_status == 'completed' %}
-                                <span class="badge badge-success">Completed</span>
-                            {% elif log.call_status == 'failed' %}
-                                <span class="badge badge-danger">Failed</span>
-                            {% elif log.call_status == 'service_not_configured' %}
-                                <span class="badge badge-warning">Not Configured</span>
+                            {% set o = log.owner_call_status or 'pending' %}
+                            {% if o == 'answered' %}
+                                <span class="badge badge-success">Answered</span>
+                            {% elif o == 'not_answered' %}
+                                <span class="badge badge-warning">No Answer</span>
+                            {% elif o == 'simulated' %}
+                                <span class="badge badge-secondary">Simulated</span>
+                            {% elif o == 'no_owner_phone' %}
+                                <span class="badge badge-secondary">No Phone</span>
                             {% else %}
-                                <span class="badge badge-secondary">{{ log.call_status }}</span>
+                                <span class="badge badge-secondary">{{ o }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% set p = log.primary_call_status or 'pending' %}
+                            {% if p == 'completed' %}
+                                <span class="badge badge-success">Notified</span>
+                            {% elif p == 'simulated' %}
+                                <span class="badge badge-secondary">Simulated</span>
+                            {% elif p == 'no_primary_contact' %}
+                                <span class="badge badge-secondary">None</span>
+                            {% elif p == 'failed' %}
+                                <span class="badge badge-danger">Failed</span>
+                            {% else %}
+                                <span class="badge badge-secondary">{{ p }}</span>
                             {% endif %}
                         </td>
                     </tr>

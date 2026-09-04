@@ -25,3 +25,6 @@ Thumbs.db
 # Project specific
 demo_test.py
 static/stickers/
+
+# Runtime server logs
+car-sos/server_*.log
