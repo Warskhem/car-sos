@@ -22,6 +22,12 @@ db.init_app(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
 
+# Ensure SQLite database directory exists (needed on fresh deploys)
+if 'sqlite' in app.config['SQLALCHEMY_DATABASE_URI']:
+    import pathlib
+    db_path = app.config['SQLALCHEMY_DATABASE_URI'].replace('sqlite:///', '')
+    pathlib.Path(os.path.dirname(db_path)).mkdir(parents=True, exist_ok=True)
+
 with app.app_context():
     db.create_all()
     if not User.query.filter_by(is_admin=True).first():
@@ -703,4 +709,8 @@ def serve_beep():
     return send_file(BytesIO(beep_data), mimetype='audio/wav')
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(
+        debug=os.environ.get('FLASK_DEBUG', '0') == '1',
+        host='0.0.0.0',
+        port=int(os.environ.get('PORT', 5000))
+    )
