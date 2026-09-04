@@ -10,7 +10,7 @@ class Config:
     PLIVO_AUTH_ID = os.environ.get('PLIVO_AUTH_ID', '')
     PLIVO_AUTH_TOKEN = os.environ.get('PLIVO_AUTH_TOKEN', '')
     PLIVO_PHONE_NUMBER = os.environ.get('PLIVO_PHONE_NUMBER', '')
-    SITE_URL = os.environ.get('SITE_URL') or os.environ.get('RENDER_EXTERNAL_URL') or 'http://127.0.0.1:5000'
+    SITE_URL = os.environ.get('SITE_URL') or 'https://digitaldreamer.in'
 
     # Owner-first SOS escalation
     OWNER_CALL_TIMEOUT_SECONDS = int(os.environ.get('OWNER_CALL_TIMEOUT_SECONDS', 30))
